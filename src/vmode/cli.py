@@ -13,8 +13,14 @@ from prompt_toolkit.document import Document
 from . import __version__
 from .agent import Agent
 from .config import Settings, load_settings
+from .instructions import build_system_prompt
 from .protocol import AgentLimits
-from .providers import HuggingFaceProvider, MockProvider, Provider
+from .providers import (
+    HuggingFaceProvider,
+    MockProvider,
+    OpenAICompatibleProvider,
+    Provider,
+)
 from .sessions import SessionStore
 from .tools import ToolRegistry
 
@@ -86,7 +92,9 @@ def make_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("prompt", nargs="?", help="initial task or prompt")
     parser.add_argument("--version", action="version", version=f"vmode {__version__}")
-    parser.add_argument("--provider", choices=("mock", "huggingface"))
+    parser.add_argument(
+        "--provider", choices=("mock", "huggingface", "openai-compatible")
+    )
     parser.add_argument("--model")
     parser.add_argument("--base-url")
     parser.add_argument("--timeout", type=float)
@@ -96,7 +104,7 @@ def make_parser() -> argparse.ArgumentParser:
         "--tool-calling",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="enable or disable model tool calls (enabled by default for Hugging Face)",
+        help="enable or disable model tool calls for a compatible provider/model",
     )
     parser.add_argument("--workspace", type=Path)
     parser.add_argument("--config", help="TOML config path")
@@ -148,29 +156,30 @@ def make_provider(settings: Settings, args: argparse.Namespace) -> Provider:
             )
         return HuggingFaceProvider(
             settings.model,
+            settings.base_url or "https://router.huggingface.co/v1",
+            settings.timeout,
+            settings.max_output_tokens,
+            supports_tool_calling=settings.tool_calling,
+        )
+    if settings.provider == "openai-compatible":
+        if settings.model == "mock/deterministic":
+            raise ValueError(
+                "The OpenAI-compatible provider requires a model ID; "
+                "set --model or VMODE_MODEL"
+            )
+        if not settings.base_url:
+            raise ValueError(
+                "The OpenAI-compatible provider requires --base-url or "
+                "provider.base_url in config"
+            )
+        return OpenAICompatibleProvider(
+            settings.model,
             settings.base_url,
             settings.timeout,
             settings.max_output_tokens,
             supports_tool_calling=settings.tool_calling,
         )
     raise ValueError(f"Unsupported provider: {settings.provider}")
-
-
-def _system_prompt(provider: Provider) -> str:
-    if provider.capabilities.tool_calling:
-        return (
-            "You are Velocity-Mode, a coding agent operating in the user's workspace. "
-            "For tasks that ask you to create or modify project files, use the "
-            "provided tools to inspect the workspace and make the requested "
-            "changes; do not merely answer with instructions or example code. "
-            "Use run_command only when needed to verify your changes. The user "
-            "must approve every file write or command. Explain actions and "
-            "results, and never claim a tool succeeded unless its result confirms it."
-        )
-    return (
-        "You are Velocity-Mode, a coding assistant with no workspace tools in this session. "
-        "Answer from supplied context only and do not claim to inspect or modify files."
-    )
 
 
 async def _interactive(settings: Settings, provider: Provider, initial: str = "") -> int:
@@ -204,7 +213,7 @@ async def _execute(settings: Settings, provider: Provider, prompt: str) -> int:
             max_iterations=settings.max_iterations,
             timeout_seconds=settings.timeout,
         ),
-        system_prompt=_system_prompt(provider),
+        system_prompt=build_system_prompt(provider, settings.workspace),
     )
     errors = False
     async for event in agent.run(prompt):
@@ -275,7 +284,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.noninteractive:
         if not args.prompt:
             parser.error("--exec requires a task argument")
-        return asyncio.run(_execute(settings, provider, args.prompt))
+        try:
+            return asyncio.run(_execute(settings, provider, args.prompt))
+        except ValueError as exc:
+            parser.error(str(exc))
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         parser.error("interactive mode requires a terminal; use --exec for scripts")
     if session_record and (session_record["provider"], session_record["model"]) != (
@@ -299,6 +311,8 @@ def main(argv: list[str] | None = None) -> int:
                 session_record=session_record,
             )
         )
+    except ValueError as exc:
+        parser.error(str(exc))
     except (KeyboardInterrupt, EOFError):
         return 130
 

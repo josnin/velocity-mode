@@ -95,40 +95,49 @@ def _file_requested(messages: Sequence[Message]) -> str:
     return found.group(1) if found else "README.md"
 
 
-class HuggingFaceProvider:
-    name = "huggingface"
+class OpenAICompatibleProvider:
+    """Streaming OpenAI Chat Completions-compatible endpoint."""
+
+    name = "openai-compatible"
 
     def __init__(
         self,
         model: str,
-        base_url: str = "https://router.huggingface.co/v1",
+        base_url: str,
         timeout: float = 60.0,
         max_output_tokens: int = 2048,
         supports_tool_calling: bool = False,
         token: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        *,
+        token_env: str = "VMODE_API_KEY",
+        provider_label: str = "OpenAI-compatible provider",
+        huggingface_routing: bool = False,
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.max_output_tokens = max_output_tokens
+        self.token_env = token_env
+        self.provider_label = provider_label
+        self.huggingface_routing = huggingface_routing
         self.capabilities = ProviderCapabilities(
             streaming=True,
             tool_calling=supports_tool_calling,
         )
-        self._token = token if token is not None else os.environ.get("HF_TOKEN", "")
+        self._token = token if token is not None else os.environ.get(token_env, "")
         self._transport = transport
 
     async def stream(
         self, messages: Sequence[Message], tools: Sequence[dict]
     ) -> AsyncIterator[ProviderEvent]:
         if not self._token:
-            raise ProviderError("HF_TOKEN is missing. Set it in your environment.")
+            raise ProviderError(f"{self.token_env} is missing. Set it in your environment.")
         try:
             parsed_url = urlsplit(self.base_url)
             parsed_url.port
         except ValueError as exc:
-            raise ProviderError("Hugging Face base URL is invalid.") from exc
+            raise ProviderError(f"{self.provider_label} base URL is invalid.") from exc
         if (
             parsed_url.scheme != "https"
             or not parsed_url.hostname
@@ -137,7 +146,9 @@ class HuggingFaceProvider:
             or parsed_url.query
             or parsed_url.fragment
         ):
-            raise ProviderError("Hugging Face base URL must be HTTPS without URL credentials.")
+            raise ProviderError(
+                f"{self.provider_label} base URL must be HTTPS without URL credentials."
+            )
         payload: dict = {
             "model": self.model,
             "messages": [message.as_api_message() for message in messages],
@@ -191,7 +202,14 @@ class HuggingFaceProvider:
                                 attempt += 1
                                 continue
                             raise ProviderError(
-                                _http_error(response.status_code, body, response.headers)
+                                _http_error(
+                                    response.status_code,
+                                    body,
+                                    response.headers,
+                                    self.provider_label,
+                                    self.token_env,
+                                    self.huggingface_routing,
+                                )
                             )
                         async for data in _sse_data(response.aiter_bytes()):
                             if data == "[DONE]":
@@ -200,39 +218,55 @@ class HuggingFaceProvider:
                             try:
                                 item = json.loads(data)
                             except json.JSONDecodeError as exc:
-                                raise ProviderError("Malformed SSE JSON from Hugging Face.") from exc
+                                raise ProviderError(
+                                    f"Malformed SSE JSON from {self.provider_label}."
+                                ) from exc
                             if not isinstance(item, dict):
-                                raise ProviderError("Malformed SSE event from Hugging Face.")
+                                raise ProviderError(
+                                    f"Malformed SSE event from {self.provider_label}."
+                                )
                             raw_usage = item.get("usage")
                             if raw_usage is not None:
                                 if not isinstance(raw_usage, dict):
-                                    raise ProviderError("Malformed usage metadata from Hugging Face.")
+                                    raise ProviderError(
+                                        f"Malformed usage metadata from {self.provider_label}."
+                                    )
                                 input_tokens = raw_usage.get("prompt_tokens")
                                 output_tokens = raw_usage.get("completion_tokens")
                                 prompt_details = raw_usage.get("prompt_tokens_details") or {}
                                 if not isinstance(prompt_details, dict):
-                                    raise ProviderError("Malformed prompt usage details from Hugging Face.")
+                                    raise ProviderError(
+                                        f"Malformed prompt usage details from {self.provider_label}."
+                                    )
                                 cached_input_tokens = prompt_details.get("cached_tokens")
                                 if any(
                                     value is not None
                                     and (type(value) is not int or value < 0)
                                     for value in (input_tokens, output_tokens, cached_input_tokens)
                                 ):
-                                    raise ProviderError("Malformed usage token counts from Hugging Face.")
+                                    raise ProviderError(
+                                        f"Malformed usage token counts from {self.provider_label}."
+                                    )
                                 usage = Usage(
                                     input_tokens, output_tokens, cached_input_tokens
                                 )
                             choices = item.get("choices", [])
                             if not isinstance(choices, list):
-                                raise ProviderError("Malformed choices in Hugging Face response.")
+                                raise ProviderError(
+                                    f"Malformed choices in {self.provider_label} response."
+                                )
                             if not choices:
                                 continue
                             choice = choices[0]
                             if not isinstance(choice, dict):
-                                raise ProviderError("Malformed choice in Hugging Face response.")
+                                raise ProviderError(
+                                    f"Malformed choice in {self.provider_label} response."
+                                )
                             delta = choice.get("delta", {})
                             if not isinstance(delta, dict):
-                                raise ProviderError("Malformed response delta from Hugging Face.")
+                                raise ProviderError(
+                                    f"Malformed response delta from {self.provider_label}."
+                                )
                             text = delta.get("content")
                             if text is not None and not isinstance(text, str):
                                 raise ProviderError("Unsupported non-text response content.")
@@ -244,13 +278,19 @@ class HuggingFaceProvider:
                                     yield ProviderEvent("text", text=safe_text)
                             tool_parts = delta.get("tool_calls", [])
                             if not isinstance(tool_parts, list):
-                                raise ProviderError("Malformed tool-call deltas from Hugging Face.")
+                                raise ProviderError(
+                                    f"Malformed tool-call deltas from {self.provider_label}."
+                                )
                             for part in tool_parts:
                                 if not isinstance(part, dict):
-                                    raise ProviderError("Malformed tool-call delta from Hugging Face.")
+                                    raise ProviderError(
+                                        f"Malformed tool-call delta from {self.provider_label}."
+                                    )
                                 index = part.get("index", 0)
                                 if type(index) is not int or index < 0:
-                                    raise ProviderError("Malformed tool-call index from Hugging Face.")
+                                    raise ProviderError(
+                                        f"Malformed tool-call index from {self.provider_label}."
+                                    )
                                 if index not in tool_deltas and len(tool_deltas) >= 8:
                                     raise ProviderError("Model returned too many tool calls.")
                                 current = tool_deltas.setdefault(
@@ -258,34 +298,46 @@ class HuggingFaceProvider:
                                 )
                                 if part.get("id"):
                                     if not isinstance(part["id"], str):
-                                        raise ProviderError("Malformed tool-call ID from Hugging Face.")
+                                        raise ProviderError(
+                                            f"Malformed tool-call ID from {self.provider_label}."
+                                        )
                                     current["id"] = part["id"]
                                 function = part.get("function", {})
                                 if not isinstance(function, dict):
-                                    raise ProviderError("Malformed tool-call function from Hugging Face.")
+                                    raise ProviderError(
+                                        f"Malformed tool-call function from {self.provider_label}."
+                                    )
                                 name_delta = function.get("name", "")
                                 argument_delta = function.get("arguments", "")
                                 if not isinstance(name_delta, str) or not isinstance(argument_delta, str):
-                                    raise ProviderError("Malformed tool-call fields from Hugging Face.")
+                                    raise ProviderError(
+                                        f"Malformed tool-call fields from {self.provider_label}."
+                                    )
                                 current["name"] += name_delta
                                 current["arguments"] += argument_delta
                                 if len(current["arguments"]) > 250_000:
                                     raise ProviderError("Model tool-call arguments exceed the size limit.")
                             choice_finish = choice.get("finish_reason")
                             if choice_finish is not None and not isinstance(choice_finish, str):
-                                raise ProviderError("Malformed finish reason from Hugging Face.")
+                                raise ProviderError(
+                                    f"Malformed finish reason from {self.provider_label}."
+                                )
                             finish_reason = choice_finish or finish_reason
                     if not done_received:
                         raise ProviderError(
-                            "Hugging Face stream ended before its completion marker."
+                            f"{self.provider_label} stream ended before its completion marker."
                         )
                     break
         except httpx.TimeoutException as exc:
-            raise ProviderError("Hugging Face request timed out.") from exc
+            raise ProviderError(f"{self.provider_label} request timed out.") from exc
         except httpx.HTTPError as exc:
-            raise ProviderError(f"Hugging Face connection failed: {type(exc).__name__}") from exc
+            raise ProviderError(
+                f"{self.provider_label} connection failed: {type(exc).__name__}"
+            ) from exc
         except ValueError as exc:
-            raise ProviderError("Malformed streaming response from Hugging Face.") from exc
+            raise ProviderError(
+                f"Malformed streaming response from {self.provider_label}."
+            ) from exc
         trailing_text = redactor.flush()
         if trailing_text:
             yield ProviderEvent("text", text=trailing_text)
@@ -306,6 +358,45 @@ class HuggingFaceProvider:
         yield ProviderEvent(
             "response", tool_calls=calls, finish_reason=finish_reason, usage=usage
         )
+
+
+class HuggingFaceProvider(OpenAICompatibleProvider):
+    name = "huggingface"
+
+    def __init__(
+        self,
+        model: str,
+        base_url: str = "https://router.huggingface.co/v1",
+        timeout: float = 60.0,
+        max_output_tokens: int = 2048,
+        supports_tool_calling: bool = False,
+        token: str | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
+        super().__init__(
+            model,
+            base_url,
+            timeout,
+            max_output_tokens,
+            supports_tool_calling,
+            token,
+            transport,
+            token_env="HF_TOKEN",
+            provider_label="Hugging Face",
+            huggingface_routing=True,
+        )
+
+    async def stream(
+        self, messages: Sequence[Message], tools: Sequence[dict]
+    ) -> AsyncIterator[ProviderEvent]:
+        try:
+            async for event in super().stream(messages, tools):
+                yield event
+        except ProviderError as exc:
+            message = str(exc)
+            if message.startswith("OpenAI-compatible provider"):
+                message = message.replace("OpenAI-compatible provider", "Hugging Face")
+            raise ProviderError(message) from exc
 
 
 class _SecretRedactor:
@@ -370,14 +461,21 @@ async def _sse_data(chunks: AsyncIterator[bytes]) -> AsyncIterator[str]:
             yield "\n".join(data_lines)
 
 
-def _http_error(status: int, body: str, headers: httpx.Headers) -> str:
+def _http_error(
+    status: int,
+    body: str,
+    headers: httpx.Headers,
+    provider_label: str,
+    token_env: str,
+    huggingface_routing: bool,
+) -> str:
     folded = body.lower()
     if status == 401:
-        reason = "HF_TOKEN was rejected. Check that the token is valid and has Inference Providers permission."
+        reason = f"{token_env} was rejected. Check that the key is valid and has access to the endpoint."
     elif status == 403 or status == 402 or "credit" in folded or "payment" in folded:
-        reason = "Inference credits are unavailable or access is denied. Check Hugging Face billing and token permissions. No retry was performed."
+        reason = f"{provider_label} access was denied or credits are unavailable. Check endpoint permissions and billing. No retry was performed."
     elif status == 404:
-        reason = "The model or endpoint is unavailable through Inference Providers."
+        reason = f"The model or endpoint is unavailable from {provider_label}."
     elif status == 400 and (
         "model" in folded
         and any(
@@ -385,19 +483,22 @@ def _http_error(status: int, body: str, headers: httpx.Headers) -> str:
             for phrase in ("not found", "does not exist", "unknown model")
         )
     ):
-        reason = (
-            "Hugging Face could not find the model on the selected route. Check "
-            "the model's Inference Providers mapping; if it lists a provider, "
-            "specify it with a model suffix such as :featherless-ai. "
-            f"Router response: {body[:500]}"
-        )
+        if huggingface_routing:
+            reason = (
+                "Hugging Face could not find the model on the selected route. Check "
+                "the model's Inference Providers mapping; if it lists a provider, "
+                "specify it with a model suffix such as :featherless-ai. "
+                f"Router response: {body[:500]}"
+            )
+        else:
+            reason = f"{provider_label} could not find the requested model: {body[:500]}"
     elif status == 429:
         retry = headers.get("retry-after")
         reason = "Rate limit reached." + (f" Retry-After: {retry}." if retry else "")
     elif status >= 500:
-        reason = f"Hugging Face service error ({status})."
+        reason = f"{provider_label} service error ({status})."
     else:
-        reason = f"Hugging Face rejected the request ({status}): {body[:500]}"
+        reason = f"{provider_label} rejected the request ({status}): {body[:500]}"
     return reason
 
 

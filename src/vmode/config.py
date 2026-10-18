@@ -10,7 +10,7 @@ from pathlib import Path
 class Settings:
     provider: str = "mock"
     model: str = "mock/deterministic"
-    base_url: str = "https://router.huggingface.co/v1"
+    base_url: str = ""
     timeout: float = 60.0
     max_iterations: int = 12
     max_output_tokens: int = 2048
@@ -55,7 +55,7 @@ def load_settings(args: object) -> Settings:
     result = Settings(
         provider=selected_provider,
         model=provider.get("model", "mock/deterministic"),
-        base_url=provider.get("base_url", "https://router.huggingface.co/v1"),
+        base_url=provider.get("base_url", ""),
         timeout=float(provider.get("timeout", 60)),
         max_iterations=int(agent.get("max_iterations", 12)),
         max_output_tokens=int(provider.get("max_output_tokens", 2048)),

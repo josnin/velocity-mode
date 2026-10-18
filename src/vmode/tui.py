@@ -35,6 +35,7 @@ from prompt_toolkit.widgets import SearchToolbar, TextArea
 from . import __version__
 from .agent import Agent
 from .config import Settings
+from .instructions import build_system_prompt
 from .protocol import AgentLimits, Message, Usage
 from .providers import Provider
 from .sessions import SessionStore
@@ -93,23 +94,6 @@ class _TranscriptLexer(Lexer):
             return [(style, line)]
 
         return get_line
-
-
-def _system_prompt(provider: Provider) -> str:
-    if provider.capabilities.tool_calling:
-        return (
-            "You are Velocity-Mode, a coding agent operating in the user's workspace. "
-            "For tasks that ask you to create or modify project files, use the "
-            "provided tools to inspect the workspace and make the requested "
-            "changes; do not merely answer with instructions or example code. "
-            "Use run_command only when needed to verify your changes. The user "
-            "must approve every file write or command. Explain actions and "
-            "results, and never claim a tool succeeded unless its result confirms it."
-        )
-    return (
-        "You are Velocity-Mode, a coding assistant with no workspace tools in this session. "
-        "Answer from supplied context only and do not claim to inspect or modify files."
-    )
 
 
 def _approval_preview(name: str, arguments: dict[str, Any], workspace: Path) -> str:
@@ -537,7 +521,7 @@ async def run_tui(
             max_iterations=settings.max_iterations,
             timeout_seconds=settings.timeout,
         ),
-        system_prompt=_system_prompt(provider),
+        system_prompt=build_system_prompt(provider, settings.workspace),
     )
     if session_record:
         restored = session_record.get("messages", [])

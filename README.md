@@ -2,8 +2,8 @@
 
 Velocity-Mode (`vmode`) is a Python 3.11+ coding-agent CLI with a Vim-inspired
 terminal editor. It streams model responses and supports bounded tool calls.
-Hugging Face is the first live provider; a deterministic mock supports offline
-development and tests.
+It includes Hugging Face and generic OpenAI Chat Completions-compatible
+providers, plus a deterministic mock for offline development and tests.
 
 ## Install
 
@@ -120,13 +120,13 @@ vmode --exec --provider huggingface \
   "Reply with OK"
 ```
 
-The adapter calls the official router's streaming Chat Completions endpoint,
-`https://router.huggingface.co/v1/chat/completions`. Configure a custom
-provider-compatible HTTPS base URL with `--base-url` or TOML. Model IDs,
-provider routing suffixes, tool support, availability, context limits, and
-streaming behavior vary. The example model IDs are not availability or pricing
-guarantees. Hugging Face inference may consume credits or require payment.
-Velocity-Mode does not estimate costs.
+The Hugging Face adapter calls the official router's streaming Chat
+Completions endpoint, `https://router.huggingface.co/v1/chat/completions`.
+Configure a custom provider-compatible HTTPS base URL with `--base-url` or
+TOML. Model IDs, provider routing suffixes, tool support, availability,
+context limits, and streaming behavior vary. The example model IDs are not
+availability or pricing guarantees. Hugging Face inference may consume
+credits or require payment. Velocity-Mode does not estimate costs.
 
 An optional live smoke request requires explicit opt-in, a token, and a model:
 
@@ -138,6 +138,43 @@ HF_MODEL="openai/gpt-oss-120b:cheapest" \
 
 It can use paid credits and fail for account, model-routing, or service reasons.
 It is not part of the test suite.
+
+## Other OpenAI-compatible providers
+
+Use `openai-compatible` for providers that implement the streaming OpenAI Chat
+Completions API. Set their API key in `VMODE_API_KEY` and pass the provider's
+HTTPS API base URL and model. For example:
+
+```sh
+export VMODE_API_KEY="your_provider_api_key"
+vmode --provider openai-compatible \
+  --base-url "https://api.example.com/v1" \
+  --model "your-model-id"
+```
+
+The endpoint base URL is the API prefix (typically ending in `/v1`);
+Velocity-Mode appends `/chat/completions`. The adapter sends a bearer
+authorization header, requests SSE streaming, and parses common OpenAI Chat
+Completions message, tool-call, and usage shapes. Provider-specific endpoints
+can differ: use only documented compatible endpoints, and disable tool calling
+unless the selected model and route explicitly support it. The generic
+provider does not assume function calling; enable it with `--tool-calling` or
+`tool_calling = true` only when the endpoint supports the tool schema.
+Endpoint-specific model names, request limits, usage reporting, stream options,
+tool-call behavior,
+availability, and billing are controlled by the provider. This adapter is
+not a universal client for every model API and has not been live-tested
+against every vendor.
+
+```toml
+[provider]
+name = "openai-compatible"
+model = "your-model-id"
+base_url = "https://api.example.com/v1"
+timeout = 60
+max_output_tokens = 2048
+tool_calling = false
+```
 
 ## Configuration
 
@@ -160,11 +197,13 @@ max_iterations = 12
 
 Supported environment overrides are `VMODE_PROVIDER`, `VMODE_MODEL`,
 `VMODE_BASE_URL`, `VMODE_TIMEOUT`, `VMODE_MAX_OUTPUT_TOKENS`,
-`VMODE_TOOL_CALLING`, and `VMODE_CONFIG`. Tool calling is enabled by default
-for Hugging Face and disabled for the mock provider unless its `read-file`
-scenario is selected.
-Disable it with `--no-tool-calling`, `VMODE_TOOL_CALLING=false`, or
-`tool_calling = false` if the selected model/provider does not support tools.
+`VMODE_TOOL_CALLING`, and `VMODE_CONFIG`. Hugging Face uses `HF_TOKEN`;
+OpenAI-compatible endpoints use `VMODE_API_KEY`. Credentials are only read
+from the environment at runtime. Tool calling defaults on for Hugging Face,
+off for OpenAI-compatible endpoints and the default mock, and on for the mock
+`read-file` scenario.
+Disable it with `--no-tool-calling`, `VMODE_TOOL_CALLING=false`, or `tool_calling = false` if the selected
+model/provider does not support tools.
 `HF_TOKEN` is read at runtime and is never accepted in TOML or CLI arguments.
 The token is sent only as an HTTPS Bearer authorization header. Redirects are
 disabled, TLS verification remains enabled, and authorization headers are not
@@ -229,6 +268,20 @@ The agent limits iterations, wall-clock time, streamed response characters,
 and tool output. Tool call IDs and argument objects are validated, and tool
 results are sent in dedicated `tool` messages rather than flattened into user
 messages.
+
+## Workspace instruction files
+
+When starting an interactive or `--exec` task, Velocity-Mode reads optional
+root-level `AGENTS.md` and `SKILLS.md` files in the selected workspace and
+adds their UTF-8 contents to the system instruction context. This lets
+projects provide their normal contribution guidance and skill notes without
+copying them into every prompt.
+Each file is limited to 32 KB and the combined content to 64 KB. Missing files
+are ignored; symlinks, non-regular files, invalid UTF-8, and over-limit files
+are rejected. These files are project-provided context, not trusted policy:
+they cannot override approval requirements, workspace restrictions, available
+tools, or higher-priority safety rules. Review their contents as you would
+other repository instructions.
 
 ## Tests and development
 

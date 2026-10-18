@@ -7,7 +7,13 @@ import pytest
 from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.document import Document
 
-from vmode.cli import VModeCompleter, _copy_response, _execute, make_parser
+from vmode.cli import (
+    VModeCompleter,
+    _copy_response,
+    _execute,
+    make_parser,
+    make_provider,
+)
 from vmode.config import Settings, load_settings
 from vmode.protocol import ProviderCapabilities, ProviderEvent, ToolCall
 
@@ -99,6 +105,40 @@ def test_huggingface_tool_calling_defaults_on_and_can_be_disabled(tmp_path, monk
     assert load_settings(args).tool_calling
     args.tool_calling = False
     assert not load_settings(args).tool_calling
+
+
+def test_openai_compatible_provider_is_configurable_and_tools_default_off(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("VMODE_PROVIDER", raising=False)
+    monkeypatch.delenv("VMODE_TOOL_CALLING", raising=False)
+    config = tmp_path / "config.toml"
+    config.write_text(
+        '[provider]\nname = "openai-compatible"\nmodel = "vendor/model"\n'
+        'base_url = "https://api.example.test/v1"\n',
+        encoding="utf-8",
+    )
+    args = Namespace(
+        config=str(config),
+        provider=None,
+        model=None,
+        base_url=None,
+        timeout=None,
+        max_iterations=None,
+        max_output_tokens=None,
+        tool_calling=None,
+        workspace=str(tmp_path),
+        mock_scenario="simple",
+    )
+    settings = load_settings(args)
+    provider = make_provider(settings, args)
+    assert provider.name == "openai-compatible"
+    assert provider.model == "vendor/model"
+    assert not provider.capabilities.tool_calling
+
+    settings.base_url = ""
+    with pytest.raises(ValueError, match="requires --base-url"):
+        make_provider(settings, args)
 
 
 def test_cli_offers_documented_modes_and_explicit_noninteractive_flag():

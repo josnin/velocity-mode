@@ -15,7 +15,8 @@ checks IDs and dispatches names/arguments only through the fixed registry.
 
 ## Hugging Face
 
-`HuggingFaceProvider` targets the official Inference Providers router:
+`HuggingFaceProvider` uses the shared Chat Completions implementation and
+targets the official Inference Providers router:
 
 ```text
 POST https://router.huggingface.co/v1/chat/completions
@@ -45,6 +46,22 @@ All provider tests inject an `httpx` transport and use fake credentials. They
 do not make live requests. `vmode --live-smoke` is a separate explicit opt-in
 that requires `HF_TOKEN` and `HF_MODEL` if no model is provided through normal
 configuration; it may incur usage charges.
+
+## Generic OpenAI-compatible endpoint
+
+`OpenAICompatibleProvider` uses streaming Chat Completions against a
+user-configured HTTPS API base URL. It appends `/chat/completions`, reads
+bearer credentials from `VMODE_API_KEY`, and redacts the key from streamed
+output and reported HTTP error bodies. The adapter is intended for endpoints
+documenting compatibility with streaming OpenAI Chat Completions; it is not a
+universal provider API translator.
+
+Tool calling is disabled by default and must be explicitly enabled because
+compatible endpoints and models vary in function/tool support. Even when
+enabled, the user approval layer and fixed tool registry remain authoritative.
+Request options, streaming usage events, token limits, error details, routing,
+and billing can vary across vendors; the adapter has offline protocol tests
+and does not claim live compatibility with every endpoint.
 
 Official references: [Inference Providers](https://huggingface.co/docs/inference-providers/en/index),
 [Responses API](https://huggingface.co/docs/inference-providers/guides/responses-api),

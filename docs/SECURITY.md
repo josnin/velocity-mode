@@ -6,25 +6,26 @@ system sandbox.
 
 ## Credentials and provider traffic
 
-- Hugging Face credentials come from `HF_TOKEN` at runtime. Velocity-Mode does not read
-  tokens from TOML or command-line options, persist tokens, or edit shell
-  configuration.
+- Hugging Face credentials come from `HF_TOKEN`; generic OpenAI-compatible
+  endpoints use `VMODE_API_KEY`. Credentials are read at runtime only.
+  Velocity-Mode does not read tokens from TOML or command-line options, persist
+  tokens, or edit shell configuration.
 - The token is sent only in an HTTPS Bearer authorization header; it is not
   included in the URL or JSON body. Authorization headers are not logged and
   echoed token text is redacted from streamed output.
 - TLS certificate verification remains enabled. Redirects are disabled so
   credentials are not forwarded to a redirect target.
-- The default host is `router.huggingface.co`. A user-configured HTTPS base
-  URL receives the configured token; configure only a provider endpoint you
-  trust.
+- The default Hugging Face host is `router.huggingface.co`. A configured
+  OpenAI-compatible HTTPS base URL also receives the configured bearer key;
+  configure only an endpoint you trust.
 - Requests have bounded timeouts. Retry is limited to one transient retry;
   authentication and credit/payment errors are not retried. Hugging Face
-  inference may consume credits or require payment.
-- Tool calling is enabled by default for Hugging Face so interactive coding
-  tasks can use workspace tools. Models/providers vary; disable it if the
-  selected route rejects tool schemas or does not support function calling.
-  Enabling it sends tool definitions but does not establish that a particular
-  model supports or reliably follows them.
+  inference and other hosted providers may consume credits or require payment.
+- Tool calling defaults on for Hugging Face and off for generic
+  OpenAI-compatible endpoints. Enable it for the latter only when the selected
+  model and route document support. Enabling it sends tool definitions but
+  does not establish that a particular model supports or reliably follows
+  them.
 - Routine tests use fake credentials and injected HTTP transport. They do not
   contact Hugging Face.
 
@@ -50,8 +51,16 @@ system sandbox.
 - The agent is not a sandbox; malicious or incorrect model output remains
   untrusted. Review proposed changes and commands.
 
-The adapter uses Chat Completions, not the Responses API or arbitrary
-Inference Endpoints. Model-specific capabilities and account access are not
-assumed. A `400`, `401`, `403`, `404`, `408`, `429`, timeout, or 5xx error is
-reported without exposing authorization headers. Check token permissions,
-model routing/availability, billing/credits, or `Retry-After` as indicated.
+The adapters use streaming OpenAI Chat Completions, not the Responses API or
+arbitrary Inference Endpoints. Model-specific capabilities and account access
+are not assumed. A `400`, `401`, `403`, `404`, `408`, `429`, timeout, or 5xx
+error is reported without exposing authorization headers. Check key
+permissions, model routing/availability, billing/credits, or `Retry-After` as
+indicated.
+
+## Workspace instruction files
+
+Optional root-level `AGENTS.md` and `SKILLS.md` files are included in model
+context when present. They must be regular, non-symlink UTF-8 files and are
+subject to size limits. Treat their contents as untrusted project guidance;
+they cannot override approval, workspace, tool, or other safety boundaries.

@@ -1,8 +1,9 @@
 # Architecture
 
 Velocity-Mode is a Python 3.11+ asynchronous CLI. The prompt UI, agent loop, provider
-protocol, domain messages, and tool registry are separate modules; Hugging Face
-HTTP/SSE parsing remains inside its provider adapter.
+protocol, domain messages, and tool registry are separate modules; provider
+HTTP/SSE parsing remains inside each adapter. The live adapters support Hugging
+Face and generic OpenAI Chat Completions-compatible endpoints.
 
 ```mermaid
 flowchart LR
@@ -14,7 +15,9 @@ flowchart LR
   Agent --> Protocol[provider protocol]
   Protocol --> Mock[deterministic mock]
   Protocol --> HF[Hugging Face adapter]
+  Protocol --> Compatible[OpenAI-compatible adapter]
   HF --> Router[Inference Providers router]
+  Compatible --> Endpoint[Configured HTTPS endpoint]
   Agent --> Registry[allowlisted tool registry]
   Registry --> Approval[interactive approval callback]
   Registry --> Workspace[workspace files / subprocess argv]
@@ -28,17 +31,19 @@ flowchart LR
 | `cli.py` | Parse options, provide the interactive prompt and completion, approvals, and exit codes |
 | `config.py` | Load TOML/environment/CLI settings and validate bounds |
 | `protocol.py` | Provider-independent messages, tool calls, usage, events, errors, and limits |
-| `providers.py` | `Provider` protocol, deterministic test provider, Hugging Face HTTP/SSE adapter |
+| `providers.py` | `Provider` protocol, deterministic test provider, Hugging Face and generic OpenAI-compatible HTTP/SSE adapters |
 | `agent.py` | Bounded provider → tool → tool-result → provider loop and structured history |
 | `tools.py` | Fixed tool definitions, workspace path checks, file references, approval and subprocess execution |
 
-Each request appends the user task to ordered history. Explicit `@file`
-references are resolved and appended as context before the request. Assistant
-tool calls are validated and executed by the fixed registry; results retain
-role `tool` and their matching `tool_call_id`. The next provider call receives
-the complete history. The Hugging Face adapter translates these normalized
-messages to Chat Completions and incrementally decodes SSE; the UI displays
-provider-independent text/activity/usage/error events.
+Each request appends the user task to ordered history. Root-level `AGENTS.md`
+and `SKILLS.md` instructions are added to the system prompt when present,
+subject to size/encoding checks and an untrusted-instructions boundary.
+Explicit `@file` references are resolved and appended as context before the
+request. Assistant tool calls are validated and executed by the fixed
+registry; results retain role `tool` and their matching `tool_call_id`. The
+next provider call receives the complete history. The adapters translate
+these normalized messages to Chat Completions and incrementally decode SSE;
+the UI displays provider-independent text/activity/usage/error events.
 
 Interactive model work runs as an asyncio task beside `prompt_toolkit`'s
 asynchronous input. It does not make blocking network calls on the terminal
@@ -48,18 +53,18 @@ wall-clock time, output characters, and tool-result size.
 
 ## Intentional boundaries
 
-Only `mock` and `huggingface` providers exist. The mock is deterministic and
-offline; its `read-file` scenario demonstrates the full tool cycle. The live
-adapter implements only the official router's streaming OpenAI-compatible Chat
-Completions route. Responses API and separate Inference Endpoint protocols are
-not implemented.
+The `mock`, `huggingface`, and `openai-compatible` providers are supported.
+The mock is deterministic and offline; its `read-file` scenario demonstrates
+the full tool cycle. The live adapters implement streaming OpenAI Chat
+Completions only. Responses API and separate Inference Endpoint protocols are
+not implemented; compatibility can vary between vendors.
 
 Provider capabilities explicitly report streaming and tool-call support.
-Hugging Face tool calling is enabled by default and can be disabled through
-configuration or CLI. Enabling it sends tool definitions but does not prove
-the selected model supports or reliably follows them. The runtime validates
-calls and bounds repeated requests, but does not claim universal
-function-calling compatibility.
+Hugging Face tool calling is enabled by default; for generic compatible
+providers it must be enabled explicitly through configuration or CLI. Enabling
+it sends tool definitions but does not prove the selected model supports or
+reliably follows them. The runtime validates calls and bounds repeated
+requests, but does not claim universal function-calling compatibility.
 
 The system prompt and tool schema remain stable across turns to preserve a
 cacheable request prefix where the selected inference backend supports prefix

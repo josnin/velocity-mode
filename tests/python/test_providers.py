@@ -5,7 +5,11 @@ import httpx
 import pytest
 
 from vmode.protocol import Message, ProviderError
-from vmode.providers import HuggingFaceProvider, _sse_data
+from vmode.providers import (
+    HuggingFaceProvider,
+    OpenAICompatibleProvider,
+    _sse_data,
+)
 
 
 @pytest.mark.asyncio
@@ -282,3 +286,63 @@ async def test_huggingface_redacts_token_from_http_error_details():
         async for _ in provider.stream([Message("user", "hello")], []):
             pass
     assert "fake-token" not in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_provider_uses_generic_key_and_parses_sse(monkeypatch):
+    captured = {}
+    data = (
+        b'data: {"choices":[{"delta":{"content":"compatible"},"finish_reason":null}]}\n\n'
+        b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+
+    async def handler(request):
+        captured["url"] = str(request.url)
+        captured["authorization"] = request.headers.get("authorization")
+        return httpx.Response(200, stream=ByteStream([data]))
+
+    monkeypatch.setenv("VMODE_API_KEY", "generic-fake-key")
+    provider = OpenAICompatibleProvider(
+        "vendor/model",
+        "https://api.example.test/v1",
+        transport=httpx.MockTransport(handler),
+    )
+    events = [
+        event async for event in provider.stream([Message("user", "hello")], [])
+    ]
+
+    assert provider.name == "openai-compatible"
+    assert captured["url"] == "https://api.example.test/v1/chat/completions"
+    assert captured["authorization"] == "Bearer generic-fake-key"
+    assert "".join(event.text for event in events if event.kind == "text") == "compatible"
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_provider_requires_explicit_key_and_tool_capability():
+    provider = OpenAICompatibleProvider(
+        "vendor/model", "https://api.example.test/v1", token=""
+    )
+    with pytest.raises(ProviderError, match="VMODE_API_KEY"):
+        async for _ in provider.stream([Message("user", "hello")], []):
+            pass
+
+    data = (
+        b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1",'
+        b'"function":{"name":"read_file","arguments":"{}"}}]},'
+        b'"finish_reason":"tool_calls"}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+
+    async def handler(request):
+        return httpx.Response(200, stream=ByteStream([data]))
+
+    provider = OpenAICompatibleProvider(
+        "vendor/model",
+        "https://api.example.test/v1",
+        token="fake-key",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(ProviderError, match="tool calling is not enabled"):
+        async for _ in provider.stream([Message("user", "read file")], []):
+            pass
