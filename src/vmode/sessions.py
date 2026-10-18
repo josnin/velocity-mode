@@ -139,6 +139,8 @@ class SessionStore:
             or not isinstance(record.get("title"), str)
         ):
             raise ValueError("Session metadata is invalid.")
+        if "tool_calling" in record and type(record["tool_calling"]) is not bool:
+            raise ValueError("Session tool-calling setting is invalid.")
         if record.get("workspace") != str(self.workspace):
             raise ValueError("Session belongs to a different workspace.")
         messages = record.get("messages")
@@ -157,6 +159,7 @@ class SessionStore:
         model: str,
         messages: list[Message],
         ui: dict[str, Any],
+        tool_calling: bool | None = None,
     ) -> None:
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.directory.chmod(0o700)
@@ -175,6 +178,8 @@ class SessionStore:
             "messages": [_serialize_message(message) for message in messages],
             "ui": ui,
         }
+        if tool_calling is not None:
+            record["tool_calling"] = tool_calling
         data = json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         if len(data) > MAX_SESSION_BYTES:
             raise ValueError("Session exceeds the storage size limit.")

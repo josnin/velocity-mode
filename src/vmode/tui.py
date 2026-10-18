@@ -351,6 +351,7 @@ async def run_tui(
                 provider.model,
                 messages,
                 ui,
+                tool_calling=provider.capabilities.tool_calling,
             )
         except (OSError, ValueError) as exc:
             state.activities.append(f"Session save failed: {exc}")

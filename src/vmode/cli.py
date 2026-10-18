@@ -6,6 +6,7 @@ import base64
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.document import Document
@@ -195,6 +196,24 @@ def make_provider(settings: Settings, args: argparse.Namespace) -> Provider:
     raise ValueError(f"Unsupported provider: {settings.provider}")
 
 
+def _settings_for_session(
+    args: argparse.Namespace, session_record: dict[str, Any]
+) -> Settings:
+    session_args = argparse.Namespace(**vars(args))
+    session_args.provider = session_record["provider"]
+    settings = load_settings(session_args)
+    settings.model = session_record["model"]
+    saved_tool_calling = session_record.get("tool_calling")
+    tool_calling_overridden = (
+        args.tool_calling is not None
+        or "VMODE_TOOL_CALLING" in os.environ
+        or "VIMA_TOOL_CALLING" in os.environ
+    )
+    if isinstance(saved_tool_calling, bool) and not tool_calling_overridden:
+        settings.tool_calling = saved_tool_calling
+    return settings
+
+
 async def _interactive(settings: Settings, provider: Provider, initial: str = "") -> int:
     from .tui import run_tui
 
@@ -276,8 +295,8 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error(f"Session uses provider {saved_provider}")
             if args.model and args.model != saved_model:
                 parser.error(f"Session uses model {saved_model}")
-            settings.provider = saved_provider
-            settings.model = saved_model
+            settings = _settings_for_session(args, session_record)
+            sessions = SessionStore(settings.workspace)
         else:
             session_id = None
             session_record = None

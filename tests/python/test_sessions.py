@@ -1,3 +1,4 @@
+import json
 import stat
 from pathlib import Path
 
@@ -21,7 +22,14 @@ def test_session_round_trip_preserves_tool_messages_and_private_permissions(tmp_
         ),
         Message("tool", "source", tool_call_id="call-1", name="read_file"),
     ]
-    store.save(session_id, "mock", "mock/deterministic", messages, {"items": []})
+    store.save(
+        session_id,
+        "mock",
+        "mock/deterministic",
+        messages,
+        {"items": []},
+        tool_calling=True,
+    )
 
     loaded = store.load(session_id)
     assert [message.role for message in loaded["messages"]] == [
@@ -32,6 +40,7 @@ def test_session_round_trip_preserves_tool_messages_and_private_permissions(tmp_
     assert loaded["messages"][1].tool_calls[0].arguments == {"path": "main.py"}
     assert loaded["messages"][2].tool_call_id == "call-1"
     assert loaded["ui"] == {"items": []}
+    assert loaded["tool_calling"] is True
     assert stat.S_IMODE(store.directory.stat().st_mode) == 0o700
     assert stat.S_IMODE((store.directory / f"{session_id}.json").stat().st_mode) == 0o600
 
@@ -65,4 +74,19 @@ def test_session_loader_rejects_invalid_ids_and_malformed_records(tmp_path: Path
     store.directory.mkdir(parents=True)
     (store.directory / f"{session_id}.json").write_text("{}", encoding="utf-8")
     with pytest.raises(ValueError, match="Unsupported session format"):
+        store.load(session_id)
+
+
+def test_session_loader_rejects_invalid_tool_calling_setting(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    store = SessionStore(workspace, tmp_path / "state")
+    session_id = store.new_id()
+    store.save(session_id, "mock", "mock/deterministic", [], {}, tool_calling=True)
+    path = store._path(session_id)
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["tool_calling"] = "yes"
+    path.write_text(json.dumps(record), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="tool-calling setting"):
         store.load(session_id)

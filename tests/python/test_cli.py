@@ -11,6 +11,7 @@ from vmode.cli import (
     VModeCompleter,
     _copy_response,
     _execute,
+    _settings_for_session,
     make_parser,
     make_provider,
 )
@@ -105,6 +106,56 @@ def test_huggingface_tool_calling_defaults_on_and_can_be_disabled(tmp_path, monk
     assert load_settings(args).tool_calling
     args.tool_calling = False
     assert not load_settings(args).tool_calling
+
+
+def test_resumed_huggingface_session_restores_tool_calling_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("VMODE_PROVIDER", raising=False)
+    monkeypatch.delenv("VMODE_TOOL_CALLING", raising=False)
+    args = make_parser().parse_args(["--workspace", str(tmp_path)])
+    settings = _settings_for_session(
+        args,
+        {"provider": "huggingface", "model": "vendor/model"},
+    )
+    provider = make_provider(settings, args)
+
+    assert settings.provider == "huggingface"
+    assert settings.model == "vendor/model"
+    assert settings.tool_calling
+    assert provider.capabilities.tool_calling
+
+
+def test_resumed_session_restores_saved_tool_calling_override(tmp_path, monkeypatch):
+    monkeypatch.delenv("VMODE_PROVIDER", raising=False)
+    monkeypatch.delenv("VMODE_TOOL_CALLING", raising=False)
+    args = make_parser().parse_args(["--workspace", str(tmp_path)])
+    settings = _settings_for_session(
+        args,
+        {
+            "provider": "huggingface",
+            "model": "vendor/model",
+            "tool_calling": False,
+        },
+    )
+
+    assert not settings.tool_calling
+
+
+def test_explicit_cli_tool_calling_overrides_resumed_session(tmp_path, monkeypatch):
+    monkeypatch.delenv("VMODE_PROVIDER", raising=False)
+    monkeypatch.delenv("VMODE_TOOL_CALLING", raising=False)
+    args = make_parser().parse_args(
+        ["--workspace", str(tmp_path), "--no-tool-calling"]
+    )
+    settings = _settings_for_session(
+        args,
+        {
+            "provider": "huggingface",
+            "model": "vendor/model",
+            "tool_calling": True,
+        },
+    )
+
+    assert not settings.tool_calling
 
 
 def test_openai_compatible_provider_is_configurable_and_tools_default_off(

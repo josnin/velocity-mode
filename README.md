@@ -59,10 +59,10 @@ Interactive sessions are automatically saved locally as you type and as model
 responses arrive. If the TUI closes unexpectedly, run `vmode --resume` to
 continue the most recently updated session in the current workspace, or use
 `vmode --list-sessions` and `vmode --resume <session-id>` to choose one.
-Session provider/model are restored automatically; configure credentials and
-any custom endpoint as usual. Remove a session with
-`vmode --delete-session <session-id>`. Sessions are workspace-specific and
-the newest 25 are retained.
+Session provider/model and its effective tool-calling setting are restored
+automatically; configure credentials and any custom endpoint as usual. Remove a
+session with `vmode --delete-session <session-id>`. Sessions are
+workspace-specific and the newest 25 are retained.
 
 Session files are stored under `${XDG_STATE_HOME:-~/.local/state}/vmode`,
 with private directory/file permissions. They contain prompts, responses,
