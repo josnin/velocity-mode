@@ -543,6 +543,7 @@ async def run_tui(
         registry,
         AgentLimits(
             max_iterations=settings.max_iterations,
+            max_output_tokens=settings.max_output_tokens,
             timeout_seconds=settings.timeout,
         ),
         system_prompt=build_system_prompt(provider, settings.workspace),

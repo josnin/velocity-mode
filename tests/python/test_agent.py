@@ -61,6 +61,33 @@ async def test_agent_stops_at_iteration_limit(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_agent_explains_output_limit_and_preserves_partial_response(tmp_path: Path):
+    class TruncatedProvider:
+        name = "truncated"
+        model = "test"
+        capabilities = ProviderCapabilities(streaming=True, tool_calling=False)
+
+        async def stream(self, messages, tools):
+            yield ProviderEvent("text", text="Partial code review")
+            yield ProviderEvent("response", finish_reason="length")
+
+    agent = Agent(
+        TruncatedProvider(),
+        ToolRegistry(tmp_path),
+        AgentLimits(max_output_tokens=1234),
+    )
+    events = [event async for event in agent.run("Review this repository")]
+
+    assert [event.text for event in events if event.kind == "text"] == [
+        "Partial code review"
+    ]
+    assert events[-1].kind == "error"
+    assert "1234 tokens" in events[-1].text
+    assert "--max-output-tokens" in events[-1].text
+    assert "may be incomplete" in events[-1].text
+
+
+@pytest.mark.asyncio
 async def test_agent_enforces_tool_call_limit(tmp_path: Path):
     agent = Agent(
         MockProvider(scenario="read-file"),

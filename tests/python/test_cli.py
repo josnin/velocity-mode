@@ -182,6 +182,28 @@ def test_default_task_timeout_is_300_and_can_be_overridden(tmp_path: Path, monke
     assert load_settings(args).timeout == 450
 
 
+def test_default_output_token_budget_is_4096_and_can_be_overridden(
+    tmp_path: Path, monkeypatch
+):
+    args = Namespace(
+        config=str(tmp_path / "missing.toml"),
+        provider=None,
+        model=None,
+        base_url=None,
+        timeout=None,
+        max_iterations=None,
+        max_output_tokens=None,
+        tool_calling=None,
+        workspace=str(tmp_path),
+    )
+    assert load_settings(args).max_output_tokens == 4096
+    args.max_output_tokens = 8192
+    assert load_settings(args).max_output_tokens == 8192
+    args.max_output_tokens = None
+    monkeypatch.setenv("VMODE_MAX_OUTPUT_TOKENS", "6144")
+    assert load_settings(args).max_output_tokens == 6144
+
+
 def test_prompt_completer_provides_commands_and_file_references(tmp_path: Path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "app.py").write_text("pass\n", encoding="utf-8")

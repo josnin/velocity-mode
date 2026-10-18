@@ -107,7 +107,11 @@ def make_parser() -> argparse.ArgumentParser:
         type=int,
         help="maximum provider requests per task (default: 24; max: 100)",
     )
-    parser.add_argument("--max-output-tokens", type=int)
+    parser.add_argument(
+        "--max-output-tokens",
+        type=int,
+        help="maximum generated tokens per provider response (default: 4096)",
+    )
     parser.add_argument(
         "--tool-calling",
         action=argparse.BooleanOptionalAction,
@@ -219,6 +223,7 @@ async def _execute(settings: Settings, provider: Provider, prompt: str) -> int:
         ToolRegistry(settings.workspace, approve=deny),
         AgentLimits(
             max_iterations=settings.max_iterations,
+            max_output_tokens=settings.max_output_tokens,
             timeout_seconds=settings.timeout,
         ),
         system_prompt=build_system_prompt(provider, settings.workspace),

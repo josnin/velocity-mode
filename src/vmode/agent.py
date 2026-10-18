@@ -98,7 +98,14 @@ class Agent:
             if final.usage is not None:
                 yield AgentEvent("usage", usage=final.usage)
             if final.finish_reason == "length":
-                yield AgentEvent("error", "Model output limit reached; response may be incomplete.")
+                yield AgentEvent(
+                    "error",
+                    f"Model stopped at its output limit (request cap: "
+                    f"{self.limits.max_output_tokens} tokens); the response may be "
+                    "incomplete. Increase --max-output-tokens or "
+                    "[provider].max_output_tokens if the model supports a larger "
+                    "output, or ask for a shorter response.",
+                )
                 return
             if not final.tool_calls:
                 yield AgentEvent("done")

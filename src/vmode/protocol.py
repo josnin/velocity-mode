@@ -83,6 +83,7 @@ class AgentLimits:
     max_iterations: int = 24
     max_tool_calls: int = 32
     max_tool_calls_per_response: int = 8
+    max_output_tokens: int = 4096
     timeout_seconds: float = 300.0
     max_history_turns: int = 4
     max_history_chars: int = 60_000

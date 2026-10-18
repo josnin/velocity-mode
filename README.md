@@ -172,7 +172,7 @@ name = "openai-compatible"
 model = "your-model-id"
 base_url = "https://api.example.com/v1"
 timeout = 300
-max_output_tokens = 2048
+max_output_tokens = 4096
 tool_calling = false
 ```
 
@@ -188,7 +188,7 @@ name = "huggingface"
 model = "openai/gpt-oss-120b:cheapest"
 base_url = "https://router.huggingface.co/v1"
 timeout = 300
-max_output_tokens = 2048
+max_output_tokens = 4096
 tool_calling = true
 
 [agent]
@@ -209,6 +209,17 @@ other larger tasks can take longer; increase the budget up to 600 seconds with
 `--timeout 600`, `[provider] timeout = 600`, or `VMODE_TIMEOUT=600`. This
 setting covers the whole agent run and each individual provider request. It
 does not increase the separate 60-second limit for an approved command.
+
+Each provider response is capped at 4096 generated tokens by default to bound
+response size and potential usage. This is separate from the input/context
+window and the overall task timeout. If a response reaches the cap, Velocity-Mode
+keeps the partial response and reports that it may be incomplete. For a model
+that supports a larger output, raise the cap with
+`--max-output-tokens 8192`, `VMODE_MAX_OUTPUT_TOKENS=8192`, or
+`[provider] max_output_tokens = 8192`. Provider/model output limits vary, so use
+a value supported by the selected endpoint; a larger cap permits more generated
+tokens and may increase usage. For very large reviews, you can also ask for
+findings in focused sections.
 
 Supported environment overrides are `VMODE_PROVIDER`, `VMODE_MODEL`,
 `VMODE_BASE_URL`, `VMODE_TIMEOUT`, `VMODE_MAX_OUTPUT_TOKENS`,
