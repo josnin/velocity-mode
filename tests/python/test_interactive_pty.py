@@ -157,6 +157,112 @@ def test_normal_motions_and_response_copy_in_terminal(tmp_path: Path):
     assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
 
 
+def test_tui_remains_interactive_while_agent_task_runs(tmp_path: Path):
+    state_home = tmp_path / "state"
+    code = """
+import asyncio
+import sys
+from vmode.providers import MockProvider
+
+original_stream = MockProvider.stream
+
+async def delayed_stream(self, messages, tools):
+    await asyncio.sleep(2.0)
+    async for event in original_stream(self, messages, tools):
+        yield event
+
+MockProvider.stream = delayed_stream
+from vmode.cli import main
+raise SystemExit(main([
+    "--provider", "mock", "--workspace", sys.argv[1], "first task"
+]))
+"""
+    pid, fd = pty.fork()
+    if pid == 0:
+        env = os.environ.copy()
+        env.update(
+            {
+                "TERM": "xterm-256color",
+                "VMODE_CONFIG": str(tmp_path / "missing.toml"),
+                "XDG_STATE_HOME": str(state_home),
+            }
+        )
+        os.execve(sys.executable, [sys.executable, "-c", code, str(tmp_path)], env)
+
+    output = bytearray()
+
+    def wait_for(marker: bytes, timeout: float = 10.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([fd], [], [], 0.1)
+            if not ready:
+                continue
+            try:
+                output.extend(os.read(fd, 8192))
+            except OSError:
+                return False
+            if marker in output:
+                return True
+        return False
+
+    def wait_for_responses(count: int, timeout: float = 10.0) -> bool:
+        store = SessionStore(tmp_path, state_home)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            session_id = store.latest_id()
+            if session_id is not None:
+                try:
+                    record = store.load(session_id)
+                except ValueError:
+                    time.sleep(0.05)
+                    continue
+                if len(record["ui"].get("responses", [])) >= count:
+                    return True
+            time.sleep(0.05)
+        return False
+
+    status = None
+    try:
+        assert wait_for(b"INSERT")
+        output.clear()
+        os.write(fd, b"\x13")
+        assert wait_for(b"Requesting mock/mock/deterministic"), bytes(output)
+
+        output.clear()
+        os.write(fd, b"\x1b:status\r")
+        assert wait_for(b"Provider mock/mock/deterministic"), bytes(output)
+
+        output.clear()
+        os.write(fd, b"ifollow-up task\x13")
+        assert wait_for(b"your draft was kept"), bytes(output)
+
+        assert wait_for(b"Turn complete"), bytes(output)
+
+        output.clear()
+        os.write(fd, b"\x1b\x13")
+        assert wait_for_responses(2), bytes(output)
+
+        output.clear()
+        os.write(fd, b":q\r")
+        assert wait_for(b"\x1b[?1049l")
+    finally:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            child, child_status = os.waitpid(pid, os.WNOHANG)
+            if child:
+                status = child_status
+                break
+            time.sleep(0.05)
+        if status is None:
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+            _, status = os.waitpid(pid, 0)
+        os.close(fd)
+    assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
+
+
 def test_insert_mode_command_and_file_completion_are_visible(tmp_path: Path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "app.py").write_text("pass\n", encoding="utf-8")

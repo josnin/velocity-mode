@@ -242,9 +242,13 @@ variables remain as migration fallbacks; `VMODE_*` values take precedence.
 The screen uses a simple conversation transcript with `You` and
 `Velocity-Mode` labels, a persistent prompt, and a live INSERT/NORMAL
 indicator. Press **Ctrl+S** to submit. **Ctrl+D** exits only when the prompt has
-focus; while browsing results it performs Vim's half-page-down motion. If a task
-is running, cancel it with **:cancel** before exiting. An empty **Enter** adds a
-newline; **:s** remains a submit-command fallback.
+focus; while browsing results it performs Vim's half-page-down motion. During a
+task, you can keep drafting the next prompt, browse existing results, and use
+`:status`, `:usage`, or `:cancel`; a second submission is refused without
+discarding the draft. Tasks run sequentially because they share conversation
+history and approval state. Cancel the active task with **:cancel** or
+**Ctrl+C** before exiting. An empty **Enter** adds a newline; **:s** remains a
+submit-command fallback.
 
 In the prompt, **Esc** enters Normal mode; **h/j/k/l**, **^/$**, **0**, and
 **gg/G** navigate. Normal-mode **/** opens the command palette in the prompt;

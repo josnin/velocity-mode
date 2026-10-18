@@ -243,9 +243,12 @@ async def run_tui(
         if state.pending_approval:
             hint = "Approval pending · y allow · n deny · Ctrl+C cancel"
         elif app.layout.has_focus(transcript):
-            hint = "Ctrl+D half-page down · / search · n/N next/previous · [ ] choose · v/V select · y copy · Tab prompt"
+            if state.busy:
+                hint = "Task running · :status · :usage · :cancel · Ctrl+C cancel · Ctrl+D half-page down · Tab prompt"
+            else:
+                hint = "Ctrl+D half-page down · / search · n/N next/previous · [ ] choose · v/V select · y copy · Tab prompt"
         elif state.busy:
-            hint = "Ctrl+C cancel · Tab results · :status · :usage"
+            hint = "Task running · draft next prompt · Esc :status/:usage/:cancel · Ctrl+C cancel · Tab results"
         else:
             hint = "Enter newline · Ctrl+S send · Ctrl+D quit · Esc Normal · / commands · @ files"
         selected = ""
@@ -442,7 +445,10 @@ async def run_tui(
             add_notice("Prompt is empty; enter a task before submitting.")
             return
         if active_task is not None and not active_task.done():
-            add_notice("Velocity-Mode is still working. Wait for the current task or use :cancel.")
+            add_notice(
+                "Task still running; your draft was kept. Check :status, browse "
+                "results, or use :cancel, then submit the draft."
+            )
             return
         state.items.append(_TranscriptItem("user", cleaned))
         assistant_item = _TranscriptItem("assistant")
@@ -949,6 +955,9 @@ async def run_tui(
             if active_task is not None and not active_task.done():
                 agent.cancel()
                 active_task.cancel()
+                state.activities.append("Cancelling current task…")
+                state.activities = state.activities[-3:]
+                app.invalidate()
             else:
                 add_notice("No active task.")
         elif name in {"results", "r"}:
