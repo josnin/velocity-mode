@@ -82,7 +82,8 @@ def make_parser() -> argparse.ArgumentParser:
         prog="vmode",
         description="Velocity-Mode coding agent",
         epilog=(
-            "Interactive: Enter adds lines; Ctrl+S submits; Ctrl+D quits; :s is a fallback. "
+            "Interactive: Enter adds lines; Ctrl+S submits; Ctrl+D quits from the prompt "
+            "and scrolls half a page down in results; :s is a fallback. "
             "Normal-mode / opens commands in the prompt and searches results; "
             ":w <file> saves the selected response. "
             "Insert-mode @ completes project files. "

@@ -243,7 +243,7 @@ async def run_tui(
         if state.pending_approval:
             hint = "Approval pending · y allow · n deny · Ctrl+C cancel"
         elif app.layout.has_focus(transcript):
-            hint = "/ search · n/N next/previous · [ ] choose · v/V select · y copy · Tab prompt"
+            hint = "Ctrl+D half-page down · / search · n/N next/previous · [ ] choose · v/V select · y copy · Tab prompt"
         elif state.busy:
             hint = "Ctrl+C cancel · Tab results · :status · :usage"
         else:
@@ -828,7 +828,17 @@ async def run_tui(
         else:
             event.app.exit(result=130)
 
-    @bindings.add("c-d", eager=True)
+    @bindings.add(
+        "c-d",
+        filter=Condition(lambda: in_transcript() and vi_navigation_mode()),
+        eager=True,
+    )
+    def scroll_results_half_page(event) -> None:
+        render_info = transcript.window.render_info
+        page_rows = render_info.window_height if render_info is not None else 1
+        transcript.buffer.cursor_down(count=max(1, page_rows // 2))
+
+    @bindings.add("c-d", filter=in_editor, eager=True)
     def exit_control_d(event) -> None:
         if state.approval_future is not None:
             add_notice("Resolve the pending approval before exiting.")
@@ -972,7 +982,8 @@ async def run_tui(
             redraw_transcript(transcript, app)
         elif name == "help":
             add_notice(
-                "Enter newline · Ctrl+S send (:s fallback) · Ctrl+D quit · "
+                "Enter newline · Ctrl+S send (:s fallback) · "
+                "Ctrl+D quit from prompt / half-page down in results · "
                 ":w <file> save response · @ files · Tab responses · "
                 "/ search, n/N repeat · [ ] choose · v/V select · y copy · :status tool state"
             )

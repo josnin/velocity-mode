@@ -132,7 +132,12 @@ def test_normal_motions_and_response_copy_in_terminal(tmp_path: Path):
         assert accumulated.count("Mock response:") == 2
 
         output.clear()
-        os.write(fd, b"\t\x04")
+        os.write(fd, b"\x04")
+        time.sleep(0.2)
+        assert b"\x1b[?1049l" not in output
+
+        output.clear()
+        os.write(fd, b":q\r")
         assert wait_for(b"\x1b[?1049l")
     finally:
         deadline = time.monotonic() + 5
@@ -293,7 +298,7 @@ def test_result_save_command_writes_selected_result(tmp_path: Path):
         )
 
         output.clear()
-        os.write(fd, b"\x04")
+        os.write(fd, b":q\r")
         assert wait_for(b"\x1b[?1049l")
     finally:
         deadline = time.monotonic() + 5
@@ -380,7 +385,7 @@ def test_partial_response_remains_available_after_iteration_limit(tmp_path: Path
         )
 
         output.clear()
-        os.write(fd, b"\x04")
+        os.write(fd, b":q\r")
         assert wait_for(b"\x1b[?1049l")
     finally:
         deadline = time.monotonic() + 5

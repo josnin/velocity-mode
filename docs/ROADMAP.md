@@ -11,7 +11,8 @@
   approval before writes and commands.
 - `prompt_toolkit` Vi editing, multiline prompt, command/file completion,
   explicit Normal-mode motions, Ctrl+S submission with `:s` fallback,
-  Ctrl+D exit, a simple speaker-labeled transcript, selected-response saving,
+  prompt-scoped Ctrl+D exit with results half-page scrolling, a simple
+  speaker-labeled transcript, selected-response saving,
   response browsing, Visual-mode yanking, asynchronous work, and approvals.
 - Renamed package and executable to `vmode` under the Velocity-Mode brand;
   legacy Vima configuration paths and environment variables remain as fallback.

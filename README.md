@@ -241,8 +241,9 @@ variables remain as migration fallbacks; `VMODE_*` values take precedence.
 
 The screen uses a simple conversation transcript with `You` and
 `Velocity-Mode` labels, a persistent prompt, and a live INSERT/NORMAL
-indicator. Press **Ctrl+S** to submit and **Ctrl+D** to exit. If a task is
-running, cancel it with **:cancel** before exiting. An empty **Enter** adds a
+indicator. Press **Ctrl+S** to submit. **Ctrl+D** exits only when the prompt has
+focus; while browsing results it performs Vim's half-page-down motion. If a task
+is running, cancel it with **:cancel** before exiting. An empty **Enter** adds a
 newline; **:s** remains a submit-command fallback.
 
 In the prompt, **Esc** enters Normal mode; **h/j/k/l**, **^/$**, **0**, and
@@ -256,6 +257,7 @@ Insert-mode **@** completes workspace files. Enter accepts a completion;
 Escape dismisses it.
 
 Press **Tab** in Normal mode to browse responses. Use **h/j/k/l** to scroll,
+**Ctrl+D** for half a page down,
 **[**/**]** to choose a response, and **v** or **V** then **y** to copy a
 selection; plain **y** copies the whole response. Tab returns to the prompt.
 Clipboard copying uses terminal OSC 52 support. From the response browser,
