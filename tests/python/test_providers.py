@@ -1,0 +1,284 @@
+import asyncio
+import json
+
+import httpx
+import pytest
+
+from vmode.protocol import Message, ProviderError
+from vmode.providers import HuggingFaceProvider, _sse_data
+
+
+@pytest.mark.asyncio
+async def test_sse_parser_handles_fragmented_frames_and_utf8():
+    async def chunks():
+        for chunk in [
+            b'data: {"choices":[{"delta":{"content":"caf\xc3',
+            b'\xa9"}}]}\r\n\r',
+            b'\ndata: [DONE]\n\n',
+        ]:
+            yield chunk
+
+    assert [frame async for frame in _sse_data(chunks())] == [
+        '{"choices":[{"delta":{"content":"café"}}]}',
+        "[DONE]",
+    ]
+
+
+class ByteStream(httpx.AsyncByteStream):
+    def __init__(self, chunks):
+        self.chunks = chunks
+
+    async def __aiter__(self):
+        for chunk in self.chunks:
+            yield chunk
+
+    async def aclose(self):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_huggingface_stream_parses_text_tool_calls_usage_and_request():
+    captured = {}
+    frames = [
+        {"choices": [{"delta": {"content": "Reading "}, "finish_reason": None}]},
+        {"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "id": "id-1", "function": {"name": "read_file", "arguments": "{\"path\":"}},
+        ]}, "finish_reason": None}]},
+        {"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "function": {"arguments": "\"README.md\"}"}},
+        ]}, "finish_reason": "tool_calls"}]},
+        {
+            "choices": [],
+            "usage": {
+                "prompt_tokens": 12,
+                "completion_tokens": 3,
+                "prompt_tokens_details": {"cached_tokens": 5},
+            },
+        },
+    ]
+    data = b"".join(
+        b"data: " + json.dumps(frame).encode() + b"\n\n" for frame in frames
+    ) + b"data: [DONE]\n\n"
+    chunks = [data[i : i + 7] for i in range(0, len(data), 7)]
+
+    async def handler(request):
+        captured["url"] = str(request.url)
+        captured["headers"] = request.headers
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, stream=ByteStream(chunks))
+
+    provider = HuggingFaceProvider(
+        "vendor/model:fastest",
+        supports_tool_calling=True,
+        token="fake-token",
+        transport=httpx.MockTransport(handler),
+    )
+    events = [
+        event
+        async for event in provider.stream(
+            [Message("user", "Inspect @README.md")],
+            [{"type": "function", "function": {"name": "read_file"}}],
+        )
+    ]
+    assert [event.text for event in events if event.kind == "text"] == ["Reading "]
+    response = events[-1]
+    assert response.tool_calls[0].arguments == {"path": "README.md"}
+    assert response.tool_calls[0].name == "read_file"
+    assert response.usage.input_tokens == 12
+    assert response.usage.cached_input_tokens == 5
+    assert captured["url"] == "https://router.huggingface.co/v1/chat/completions"
+    assert captured["headers"]["authorization"] == "Bearer fake-token"
+    assert captured["body"]["stream"] is True
+    assert captured["body"]["model"] == "vendor/model:fastest"
+
+
+@pytest.mark.asyncio
+async def test_huggingface_missing_token_and_credits_are_actionable():
+    provider = HuggingFaceProvider("vendor/model", token="")
+    with pytest.raises(ProviderError, match="HF_TOKEN"):
+        async for _ in provider.stream([Message("user", "hello")], []):
+            pass
+
+    async def handler(request):
+        return httpx.Response(402, text="credits unavailable")
+
+    provider = HuggingFaceProvider(
+        "vendor/model", token="fake-token", transport=httpx.MockTransport(handler)
+    )
+    with pytest.raises(ProviderError, match="credits"):
+        async for _ in provider.stream([Message("user", "hello")], []):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_huggingface_model_not_found_explains_provider_routing():
+    async def handler(request):
+        return httpx.Response(400, json={"error": "model not found"})
+
+    provider = HuggingFaceProvider(
+        "microsoft/Phi-3-mini-4k-instruct:cheapest",
+        token="fake-token",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(ProviderError, match="Inference Providers mapping") as error:
+        async for _ in provider.stream([Message("user", "hello")], []):
+            pass
+    assert ":featherless-ai" in str(error.value)
+    assert "model not found" in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_huggingface_redacts_token_split_across_stream_deltas():
+    frames = [
+        {"choices": [{"delta": {"content": "before fake-"}, "finish_reason": None}]},
+        {"choices": [{"delta": {"content": "token after"}, "finish_reason": "stop"}]},
+    ]
+    data = b"".join(
+        b"data: " + json.dumps(frame).encode() + b"\n\n" for frame in frames
+    ) + b"data: [DONE]\n\n"
+
+    async def handler(request):
+        return httpx.Response(200, stream=ByteStream([data]))
+
+    provider = HuggingFaceProvider(
+        "vendor/model",
+        token="fake-token",
+        transport=httpx.MockTransport(handler),
+    )
+    text = "".join([
+        event.text
+        async for event in provider.stream([Message("user", "hello")], [])
+        if event.kind == "text"
+    ])
+    assert text == "before ****** after"
+    assert "fake-token" not in text
+
+
+@pytest.mark.asyncio
+async def test_huggingface_retries_transient_errors_once_and_never_retries_auth_or_credit():
+    attempts = 0
+    success = b'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+
+    async def retry_handler(request):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(503, headers={"Retry-After": "0"}, text="temporary")
+        return httpx.Response(200, stream=ByteStream([success]))
+
+    provider = HuggingFaceProvider(
+        "vendor/model",
+        token="fake-token",
+        transport=httpx.MockTransport(retry_handler),
+    )
+    events = [
+        event async for event in provider.stream([Message("user", "hello")], [])
+    ]
+    assert attempts == 2
+    assert "".join(event.text for event in events if event.kind == "text") == "ok"
+
+    for status, body, expected in (
+        (401, "invalid token", "HF_TOKEN"),
+        (429, "insufficient credits", "credits"),
+        (500, "inference credits unavailable", "credits"),
+    ):
+        attempts = 0
+
+        async def failure_handler(request, *, status=status, body=body):
+            nonlocal attempts
+            attempts += 1
+            return httpx.Response(status, text=body)
+
+        provider = HuggingFaceProvider(
+            "vendor/model",
+            token="fake-token",
+            transport=httpx.MockTransport(failure_handler),
+        )
+        with pytest.raises(ProviderError, match=expected):
+            async for _ in provider.stream([Message("user", "hello")], []):
+                pass
+        assert attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_huggingface_rejects_non_https_or_credential_urls():
+    for url in ("http://localhost/v1", "https://user:pass@example.com/v1"):
+        provider = HuggingFaceProvider(base_url=url, model="model", token="fake-token")
+        with pytest.raises(ProviderError, match="HTTPS"):
+            async for _ in provider.stream([Message("user", "hello")], []):
+                pass
+
+
+@pytest.mark.asyncio
+async def test_huggingface_does_not_assume_tool_calling_support():
+    captured = {}
+    frame = {
+        "choices": [
+            {
+                "delta": {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call-1",
+                            "function": {"name": "read_file", "arguments": "{}"},
+                        }
+                    ]
+                },
+                "finish_reason": "tool_calls",
+            }
+        ]
+    }
+    data = b"data: " + json.dumps(frame).encode() + b"\n\ndata: [DONE]\n\n"
+
+    async def handler(request):
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, stream=ByteStream([data]))
+
+    provider = HuggingFaceProvider(
+        "vendor/model",
+        token="fake-token",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(ProviderError, match="tool calling is not enabled"):
+        async for _ in provider.stream(
+            [Message("user", "read a file")],
+            [{"type": "function", "function": {"name": "read_file"}}],
+        ):
+            pass
+    assert "tools" not in captured["body"]
+
+
+@pytest.mark.asyncio
+async def test_huggingface_rejects_malformed_or_interrupted_sse_streams():
+    valid_frame = b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+    for data, expected in (
+        (b"data: []\n\ndata: [DONE]\n\n", "Malformed SSE event"),
+        (valid_frame, "ended before its completion marker"),
+    ):
+        async def handler(request, *, data=data):
+            return httpx.Response(200, stream=ByteStream([data]))
+
+        provider = HuggingFaceProvider(
+            "vendor/model",
+            token="fake-token",
+            transport=httpx.MockTransport(handler),
+        )
+        with pytest.raises(ProviderError, match=expected):
+            async for _ in provider.stream([Message("user", "hello")], []):
+                pass
+
+
+@pytest.mark.asyncio
+async def test_huggingface_redacts_token_from_http_error_details():
+    async def handler(request):
+        return httpx.Response(400, text="request rejected with bearer fake-token")
+
+    provider = HuggingFaceProvider(
+        "vendor/model",
+        token="fake-token",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(ProviderError) as error:
+        async for _ in provider.stream([Message("user", "hello")], []):
+            pass
+    assert "fake-token" not in str(error.value)

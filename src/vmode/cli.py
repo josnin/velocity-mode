@@ -1,0 +1,307 @@
+from __future__ import annotations
+
+import argparse
+import asyncio
+import base64
+import os
+import sys
+from pathlib import Path
+
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.document import Document
+
+from . import __version__
+from .agent import Agent
+from .config import Settings, load_settings
+from .protocol import AgentLimits
+from .providers import HuggingFaceProvider, MockProvider, Provider
+from .sessions import SessionStore
+from .tools import ToolRegistry
+
+COMMANDS = {
+    "/help": "Show commands and key bindings",
+    "/status": "Show provider, model, and usage",
+    "/usage": "Show token usage",
+    "/s": "Submit the current prompt (fallback)",
+    "/results": "Browse previous responses",
+    "/copy": "Yank the selected response",
+    "/clear": "Clear the visible transcript",
+    "/quit": "Exit Velocity-Mode",
+    "/exit": "Exit Velocity-Mode",
+}
+
+
+class VModeCompleter(Completer):
+    def __init__(self, workspace: Path, commands_enabled: bool = True):
+        self.files = ToolRegistry(workspace)
+        self.commands_enabled = commands_enabled
+
+    def get_completions(self, document: Document, complete_event):
+        text = document.text_before_cursor
+        if (
+            self.commands_enabled
+            and text.startswith("/")
+            and "\n" not in text
+            and " " not in text
+        ):
+            query = text.lower()
+            for command, description in COMMANDS.items():
+                if query in command.lower() or query in description.lower():
+                    yield Completion(
+                        command,
+                        start_position=-len(text),
+                        display=command,
+                        display_meta=description,
+                    )
+            return
+        boundary = max(text.rfind(" "), text.rfind("\n"), text.rfind("("))
+        token = text[boundary + 1 :]
+        if not token.startswith("@"):
+            return
+        prefix = token[1:]
+        for path in self.files.iter_files():
+            value = path.relative_to(self.files.root).as_posix()
+            if value.startswith(prefix) or Path(value).name.startswith(Path(prefix).name):
+                reference = "@" + value
+                yield Completion(
+                    reference,
+                    start_position=-len(token),
+                    display=reference,
+                    display_meta="Project file",
+                )
+
+
+def make_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="vmode",
+        description="Velocity-Mode coding agent",
+        epilog=(
+            "Interactive: Enter adds lines; Ctrl+S submits; Ctrl+D quits; :s is a fallback. "
+            "Normal-mode / opens commands in the prompt and searches results; "
+            ":w <file> saves the selected response. "
+            "Insert-mode @ completes project files. "
+            "Writes and commands require interactive approval; --exec refuses "
+            "approval-required operations."
+        ),
+    )
+    parser.add_argument("prompt", nargs="?", help="initial task or prompt")
+    parser.add_argument("--version", action="version", version=f"vmode {__version__}")
+    parser.add_argument("--provider", choices=("mock", "huggingface"))
+    parser.add_argument("--model")
+    parser.add_argument("--base-url")
+    parser.add_argument("--timeout", type=float)
+    parser.add_argument("--max-iterations", type=int)
+    parser.add_argument("--max-output-tokens", type=int)
+    parser.add_argument(
+        "--tool-calling",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="enable or disable model tool calls (enabled by default for Hugging Face)",
+    )
+    parser.add_argument("--workspace", type=Path)
+    parser.add_argument("--config", help="TOML config path")
+    session_group = parser.add_mutually_exclusive_group()
+    session_group.add_argument(
+        "--resume",
+        nargs="?",
+        const="latest",
+        metavar="SESSION_ID",
+        help="resume the latest session for this workspace, or a specific session ID",
+    )
+    session_group.add_argument(
+        "--list-sessions",
+        action="store_true",
+        help="list saved sessions for this workspace",
+    )
+    session_group.add_argument(
+        "--delete-session",
+        metavar="SESSION_ID",
+        help="delete a saved session",
+    )
+    parser.add_argument(
+        "--exec",
+        dest="noninteractive",
+        action="store_true",
+        help="run one task without the interactive terminal",
+    )
+    parser.add_argument(
+        "--mock-scenario",
+        choices=("simple", "read-file"),
+        default="simple",
+        help="mock behavior; read-file demonstrates the complete tool cycle",
+    )
+    parser.add_argument(
+        "--live-smoke",
+        action="store_true",
+        help="send a minimal live request (requires HF_TOKEN)",
+    )
+    return parser
+
+
+def make_provider(settings: Settings, args: argparse.Namespace) -> Provider:
+    if settings.provider == "mock":
+        return MockProvider(settings.model, args.mock_scenario)
+    if settings.provider == "huggingface":
+        if settings.model == "mock/deterministic":
+            raise ValueError(
+                "Hugging Face requires a model ID; set --model or VMODE_MODEL"
+            )
+        return HuggingFaceProvider(
+            settings.model,
+            settings.base_url,
+            settings.timeout,
+            settings.max_output_tokens,
+            supports_tool_calling=settings.tool_calling,
+        )
+    raise ValueError(f"Unsupported provider: {settings.provider}")
+
+
+def _system_prompt(provider: Provider) -> str:
+    if provider.capabilities.tool_calling:
+        return (
+            "You are Velocity-Mode, a coding agent operating in the user's workspace. "
+            "For tasks that ask you to create or modify project files, use the "
+            "provided tools to inspect the workspace and make the requested "
+            "changes; do not merely answer with instructions or example code. "
+            "Use run_command only when needed to verify your changes. The user "
+            "must approve every file write or command. Explain actions and "
+            "results, and never claim a tool succeeded unless its result confirms it."
+        )
+    return (
+        "You are Velocity-Mode, a coding assistant with no workspace tools in this session. "
+        "Answer from supplied context only and do not claim to inspect or modify files."
+    )
+
+
+async def _interactive(settings: Settings, provider: Provider, initial: str = "") -> int:
+    from .tui import run_tui
+
+    return await run_tui(
+        settings,
+        provider,
+        initial,
+        lambda workspace, commands: VModeCompleter(workspace, commands),
+    )
+
+
+def _copy_response(response: str) -> bool:
+    if len(response.encode("utf-8")) > 100_000 or not sys.stdout.isatty():
+        return False
+    payload = base64.b64encode(response.encode("utf-8")).decode("ascii")
+    sys.stdout.write(f"\x1b]52;c;{payload}\x07")
+    sys.stdout.flush()
+    return True
+
+
+async def _execute(settings: Settings, provider: Provider, prompt: str) -> int:
+    async def deny(name, arguments):
+        return False
+
+    agent = Agent(
+        provider,
+        ToolRegistry(settings.workspace, approve=deny),
+        AgentLimits(
+            max_iterations=settings.max_iterations,
+            timeout_seconds=settings.timeout,
+        ),
+        system_prompt=_system_prompt(provider),
+    )
+    errors = False
+    async for event in agent.run(prompt):
+        if event.kind == "text":
+            print(event.text, end="", flush=True)
+        elif event.kind == "activity":
+            print(f"\n  {event.text}", file=sys.stderr)
+        elif event.kind == "error":
+            errors = True
+            print(f"\nvmode: {event.text}", file=sys.stderr)
+    print()
+    return 1 if errors else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = make_parser()
+    args = parser.parse_args(argv)
+    try:
+        settings = load_settings(args)
+        sessions = SessionStore(settings.workspace)
+        if args.list_sessions:
+            saved = sessions.list()
+            if not saved:
+                print("No saved sessions for this workspace.")
+                return 0
+            for item in saved:
+                updated = item.updated_at.replace("T", " ")[:19]
+                title = item.title.replace("\n", " ")
+                print(f"{item.id}  {updated}  {item.provider}/{item.model}  {title}")
+            return 0
+        if args.delete_session:
+            try:
+                sessions.delete(args.delete_session)
+            except ValueError as exc:
+                parser.error(str(exc))
+            print(f"Deleted session {args.delete_session}")
+            return 0
+        if args.resume:
+            session_id = sessions.latest_id() if args.resume == "latest" else args.resume
+            if session_id is None:
+                parser.error("No saved sessions for this workspace")
+            session_record = sessions.load(session_id)
+            saved_provider = session_record["provider"]
+            saved_model = session_record["model"]
+            if args.provider and args.provider != saved_provider:
+                parser.error(f"Session uses provider {saved_provider}")
+            if args.model and args.model != saved_model:
+                parser.error(f"Session uses model {saved_model}")
+            settings.provider = saved_provider
+            settings.model = saved_model
+        else:
+            session_id = None
+            session_record = None
+        if args.live_smoke:
+            settings.provider = "huggingface"
+            if settings.model == "mock/deterministic":
+                settings.model = os.environ.get("HF_MODEL", "")
+        provider = make_provider(settings, args)
+    except (ValueError, OSError) as exc:
+        parser.error(str(exc))
+    if args.live_smoke:
+        if not getattr(provider, "_token", ""):
+            parser.error("--live-smoke requires HF_TOKEN")
+        args.noninteractive = True
+        args.prompt = args.prompt or "Reply with the single word Velocity-Mode."
+    if args.resume and args.noninteractive:
+        parser.error("--resume is available only in interactive mode")
+    if args.noninteractive:
+        if not args.prompt:
+            parser.error("--exec requires a task argument")
+        return asyncio.run(_execute(settings, provider, args.prompt))
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        parser.error("interactive mode requires a terminal; use --exec for scripts")
+    if session_record and (session_record["provider"], session_record["model"]) != (
+        provider.name,
+        provider.model,
+    ):
+        parser.error("Selected provider cannot resume this session.")
+    if session_id:
+        print(f"Resuming session {session_id}", file=sys.stderr)
+    try:
+        from .tui import run_tui
+
+        return asyncio.run(
+            run_tui(
+                settings,
+                provider,
+                args.prompt or "",
+                lambda workspace, commands: VModeCompleter(workspace, commands),
+                sessions=sessions,
+                session_id=session_id,
+                session_record=session_record,
+            )
+        )
+    except (KeyboardInterrupt, EOFError):
+        return 130
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
