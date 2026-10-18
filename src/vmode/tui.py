@@ -246,7 +246,7 @@ async def run_tui(
             if state.busy:
                 hint = "Task running · :status · :usage · :cancel · Ctrl+C cancel · Ctrl+D half-page down · Tab prompt"
             else:
-                hint = "Ctrl+D half-page down · / search · n/N next/previous · [ ] choose · v/V select · y copy · Tab prompt"
+                hint = "Ctrl+D half-page down · / search · n/N repeat · [ older · ] newer result (save/copy) · v/V select · y copy · Tab prompt"
         elif state.busy:
             hint = "Task running · draft next prompt · Esc :status/:usage/:cancel · Ctrl+C cancel · Tab results"
         else:
@@ -995,7 +995,8 @@ async def run_tui(
                 "Enter newline · Ctrl+S send (:s fallback) · "
                 "Ctrl+D quit from prompt / half-page down in results · "
                 ":w <file> save response · @ files · Tab responses · "
-                "/ search, n/N repeat · [ ] choose · v/V select · y copy · :status tool state"
+                "/ search, n/N repeat · [ older / ] newer response for save/copy · "
+                "v/V select · y copy · :status tool state"
             )
         else:
             prefix = state.command_prefix if state.command_prefix == "/" else ":"
@@ -1009,7 +1010,7 @@ async def run_tui(
                 "class:dim",
                 f" tools:{'on' if provider.capabilities.tool_calling else 'off'} ",
             ),
-            ("class:dim", f" {settings.workspace.name}"),
+            ("class:dim", f"\n Workspace: {settings.workspace}"),
         ]
 
     def activity_text() -> list[tuple[str, str]]:
@@ -1040,7 +1041,7 @@ async def run_tui(
     )
     root = HSplit(
         [
-            Window(FormattedTextControl(header), height=1, style="class:header"),
+            Window(FormattedTextControl(header), height=2, style="class:header"),
             Window(height=1, char="─", style="class:rule"),
             transcript,
             approval_row,

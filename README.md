@@ -241,9 +241,10 @@ variables remain as migration fallbacks; `VMODE_*` values take precedence.
 
 The screen uses a simple conversation transcript with `You` and
 `Velocity-Mode` labels, a persistent prompt, and a live INSERT/NORMAL
-indicator. Press **Ctrl+S** to submit. **Ctrl+D** exits only when the prompt has
-focus; while browsing results it performs Vim's half-page-down motion. During a
-task, you can keep drafting the next prompt, browse existing results, and use
+indicator. The header shows the full workspace path. Press **Ctrl+S** to submit.
+**Ctrl+D** exits only when the prompt has focus; while browsing results it
+performs Vim's half-page-down motion. During a task, you can keep drafting the
+next prompt, browse existing results, and use
 `:status`, `:usage`, or `:cancel`; a second submission is refused without
 discarding the draft. Tasks run sequentially because they share conversation
 history and approval state. Cancel the active task with **:cancel** or
@@ -261,9 +262,10 @@ Insert-mode **@** completes workspace files. Enter accepts a completion;
 Escape dismisses it.
 
 Press **Tab** in Normal mode to browse responses. Use **h/j/k/l** to scroll,
-**Ctrl+D** for half a page down,
-**[**/**]** to choose a response, and **v** or **V** then **y** to copy a
-selection; plain **y** copies the whole response. Tab returns to the prompt.
+**Ctrl+D** for half a page down, **[** for the older response and **]** for the newer response targeted by
+save/copy (the selected response number appears in the toolbar), and **v** or
+**V** then **y** to copy a selection; plain **y** copies the selected response.
+Tab returns to the prompt.
 Clipboard copying uses terminal OSC 52 support. From the response browser,
 **:w <file>** saves the selected response (not the prompt); paths must stay
 inside the workspace and target an existing directory.

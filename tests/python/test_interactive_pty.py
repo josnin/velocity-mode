@@ -72,6 +72,7 @@ def test_normal_motions_and_response_copy_in_terminal(tmp_path: Path):
     status = None
     try:
         assert wait_for(b"INSERT")
+        assert str(tmp_path).encode() in output
         output.clear()
         os.write(fd, b"\x1b")
         assert wait_for(b"NORMAL")
