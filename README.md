@@ -262,10 +262,12 @@ Insert-mode **@** completes workspace files. Enter accepts a completion;
 Escape dismisses it.
 
 Press **Tab** in Normal mode to browse responses. Use **h/j/k/l** to scroll,
-**Ctrl+D** for half a page down, **[** for the older response and **]** for the newer response targeted by
-save/copy (the selected response number appears in the toolbar), and **v** or
-**V** then **y** to copy a selection; plain **y** copies the selected response.
-Tab returns to the prompt.
+**Ctrl+D** for half a page down, **[** for the older response and **]** for the
+newer response targeted by save/copy. The current target is shown beside the
+mode indicator and its response heading is highlighted in the transcript;
+changing the target scrolls to that response. Use **v** or **V** then **y** to
+copy a selection; plain **y** copies the selected response. Tab returns to the
+prompt.
 Clipboard copying uses terminal OSC 52 support. From the response browser,
 **:w <file>** saves the selected response (not the prompt); paths must stay
 inside the workspace and target an existing directory.

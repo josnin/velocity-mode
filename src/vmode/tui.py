@@ -84,7 +84,9 @@ class _TranscriptLexer(Lexer):
 
         def get_line(index: int) -> list[tuple[str, str]]:
             line = lines[index]
-            if line.startswith("You"):
+            if line.startswith("▶ SELECTED RESPONSE "):
+                style = "class:transcript-selected"
+            elif line.startswith("You"):
                 style = "class:transcript-user"
             elif line.startswith("Velocity-Mode"):
                 style = "class:transcript-assistant"
@@ -196,11 +198,30 @@ async def run_tui(
 
     def transcript_text() -> str:
         chunks: list[str] = []
+        selected_response = (
+            state.responses[state.selected_response]
+            if 0 <= state.selected_response < len(state.responses)
+            else None
+        )
+        response_positions = {
+            response.identifier: index + 1
+            for index, response in enumerate(state.responses)
+        }
         for item in state.items:
             if item.role == "user":
                 chunks.append("\nYou\n")
                 chunks.extend(f"  {line}\n" for line in (item.text.splitlines() or [""]))
             elif item.role == "assistant":
+                response_position = (
+                    response_positions.get(item.response_id)
+                    if item.response_id is not None
+                    else None
+                )
+                selected_label = (
+                    response_position is not None
+                    and selected_response is not None
+                    and item.response_id == selected_response.identifier
+                )
                 label = (
                     "Velocity-Mode · partial"
                     if item.incomplete
@@ -210,6 +231,11 @@ async def run_tui(
                         else "Velocity-Mode"
                     )
                 )
+                if selected_label:
+                    label = (
+                        f"▶ SELECTED RESPONSE {response_position}/"
+                        f"{len(state.responses)} · {label}"
+                    )
                 chunks.append(f"\n{label}\n")
                 chunks.extend(f"  {line}\n" for line in (item.text.splitlines() or [""]))
             elif item.role == "notice":
@@ -226,8 +252,20 @@ async def run_tui(
             app.invalidate()
 
     def refresh_selection_marker(app: Application) -> None:
-        cursor = transcript.buffer.cursor_position
         text = transcript_text()
+        selected_marker = (
+            f"▶ SELECTED RESPONSE {state.selected_response + 1}/"
+            f"{len(state.responses)} ·"
+            if 0 <= state.selected_response < len(state.responses)
+            else ""
+        )
+        cursor = (
+            text.find(selected_marker)
+            if selected_marker
+            else transcript.buffer.cursor_position
+        )
+        if cursor < 0:
+            cursor = transcript.buffer.cursor_position
         transcript.buffer.set_document(
             Document(text, cursor_position=min(cursor, len(text))),
             bypass_readonly=True,
@@ -251,15 +289,16 @@ async def run_tui(
             hint = "Task running · draft next prompt · Esc :status/:usage/:cancel · Ctrl+C cancel · Tab results"
         else:
             hint = "Enter newline · Ctrl+S send · Ctrl+D quit · Esc Normal · / commands · @ files"
-        selected = ""
-        if state.responses:
-            selected = (
-                f" · response {state.selected_response + 1}/{len(state.responses)}"
+        result = [("class:mode", f" {mode} ")]
+        if 0 <= state.selected_response < len(state.responses):
+            result.append(
+                (
+                    "class:selected-target",
+                    f" TARGET {state.selected_response + 1}/{len(state.responses)} ",
+                )
             )
-        return [
-            ("class:mode", f" {mode} "),
-            ("class:toolbar", f" {hint}{selected}"),
-        ]
+        result.append(("class:toolbar", f" · {hint}"))
+        return result
 
     transcript = TextArea(
         text=transcript_text(),
@@ -435,7 +474,6 @@ async def run_tui(
         refresh_selection_marker(app)
         app.layout.focus(transcript)
         app.vi_state.input_mode = app.vi_state.input_mode.__class__.NAVIGATION
-        transcript.buffer.cursor_position = len(transcript.buffer.text)
         app.invalidate()
 
     def start_agent(prompt: str, app: Application) -> None:
@@ -1069,6 +1107,8 @@ async def run_tui(
             "approval": "bold #e3b341",
             "toolbar": "bg:#20242b #aab2bf",
             "mode": "bold #ffffff bg:#6e40c9",
+            "transcript-selected": "bold #ffffff bg:#1f6feb",
+            "selected-target": "bold #ffffff bg:#1f6feb",
         }
     )
     app = Application(
