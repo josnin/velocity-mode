@@ -11,7 +11,7 @@ class Settings:
     provider: str = "mock"
     model: str = "mock/deterministic"
     base_url: str = ""
-    timeout: float = 60.0
+    timeout: float = 300.0
     max_iterations: int = 24
     max_output_tokens: int = 2048
     tool_calling: bool = False
@@ -56,7 +56,7 @@ def load_settings(args: object) -> Settings:
         provider=selected_provider,
         model=provider.get("model", "mock/deterministic"),
         base_url=provider.get("base_url", ""),
-        timeout=float(provider.get("timeout", 60)),
+        timeout=float(provider.get("timeout", 300)),
         max_iterations=int(agent.get("max_iterations", 24)),
         max_output_tokens=int(provider.get("max_output_tokens", 2048)),
         tool_calling=file_tool_calling,

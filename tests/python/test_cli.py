@@ -162,6 +162,26 @@ def test_default_agent_iteration_limit_is_24(tmp_path: Path):
     assert load_settings(args).max_iterations == 24
 
 
+def test_default_task_timeout_is_300_and_can_be_overridden(tmp_path: Path, monkeypatch):
+    args = Namespace(
+        config=str(tmp_path / "missing.toml"),
+        provider=None,
+        model=None,
+        base_url=None,
+        timeout=None,
+        max_iterations=None,
+        max_output_tokens=None,
+        tool_calling=None,
+        workspace=str(tmp_path),
+    )
+    assert load_settings(args).timeout == 300
+    args.timeout = 600
+    assert load_settings(args).timeout == 600
+    args.timeout = None
+    monkeypatch.setenv("VMODE_TIMEOUT", "450")
+    assert load_settings(args).timeout == 450
+
+
 def test_prompt_completer_provides_commands_and_file_references(tmp_path: Path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "app.py").write_text("pass\n", encoding="utf-8")

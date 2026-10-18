@@ -97,7 +97,11 @@ def make_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--model")
     parser.add_argument("--base-url")
-    parser.add_argument("--timeout", type=float)
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        help="overall task and per-request timeout in seconds (default: 300; max: 600)",
+    )
     parser.add_argument(
         "--max-iterations",
         type=int,

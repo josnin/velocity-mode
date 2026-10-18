@@ -171,7 +171,7 @@ against every vendor.
 name = "openai-compatible"
 model = "your-model-id"
 base_url = "https://api.example.com/v1"
-timeout = 60
+timeout = 300
 max_output_tokens = 2048
 tool_calling = false
 ```
@@ -187,7 +187,7 @@ defaults:
 name = "huggingface"
 model = "openai/gpt-oss-120b:cheapest"
 base_url = "https://router.huggingface.co/v1"
-timeout = 60
+timeout = 300
 max_output_tokens = 2048
 tool_calling = true
 
@@ -203,6 +203,12 @@ obeys the configured overall timeout and tool-call limits. If the limit keeps
 being reached, check the transcript for repeated tool calls or a model that
 does not produce a final answer; raising the limit alone may just allow an
 unproductive loop to continue.
+
+An entire task has a 300-second timeout by default. Repository reviews and
+other larger tasks can take longer; increase the budget up to 600 seconds with
+`--timeout 600`, `[provider] timeout = 600`, or `VMODE_TIMEOUT=600`. This
+setting covers the whole agent run and each individual provider request. It
+does not increase the separate 60-second limit for an approved command.
 
 Supported environment overrides are `VMODE_PROVIDER`, `VMODE_MODEL`,
 `VMODE_BASE_URL`, `VMODE_TIMEOUT`, `VMODE_MAX_OUTPUT_TOKENS`,
