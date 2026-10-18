@@ -313,6 +313,93 @@ def test_result_save_command_writes_selected_result(tmp_path: Path):
     assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
 
 
+def test_partial_response_remains_available_after_iteration_limit(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "README.md").write_text("test file\n", encoding="utf-8")
+    state_home = tmp_path / "state"
+    pid, fd = pty.fork()
+    if pid == 0:
+        env = os.environ.copy()
+        env.update(
+            {
+                "TERM": "xterm-256color",
+                "VMODE_CONFIG": str(tmp_path / "missing.toml"),
+                "XDG_STATE_HOME": str(state_home),
+            }
+        )
+        os.execve(
+            sys.executable,
+            [
+                sys.executable,
+                "-m",
+                "vmode",
+                "--provider",
+                "mock",
+                "--mock-scenario",
+                "read-file",
+                "--max-iterations",
+                "1",
+                "--workspace",
+                str(workspace),
+                "Inspect @README.md",
+            ],
+            env,
+        )
+
+    output = bytearray()
+
+    def wait_for(marker: bytes, timeout: float = 10.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([fd], [], [], 0.1)
+            if not ready:
+                continue
+            try:
+                output.extend(os.read(fd, 8192))
+            except OSError:
+                return False
+            if marker in output:
+                return True
+        return False
+
+    status = None
+    try:
+        assert wait_for(b"INSERT")
+        output.clear()
+        os.write(fd, b"\x1b")
+        assert wait_for(b"NORMAL")
+        os.write(fd, b"\x13")
+        assert wait_for(b"Agent iteration limit reached"), bytes(output)
+
+        output.clear()
+        os.write(fd, b"\x1b:w partial.txt\r")
+        assert wait_for(b"Saved result 1 to partial.txt"), bytes(output)
+        assert (workspace / "partial.txt").read_text(encoding="utf-8") == (
+            "I’ll inspect the requested file."
+        )
+
+        output.clear()
+        os.write(fd, b"\x04")
+        assert wait_for(b"\x1b[?1049l")
+    finally:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            child, child_status = os.waitpid(pid, os.WNOHANG)
+            if child:
+                status = child_status
+                break
+            time.sleep(0.05)
+        if status is None:
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+            _, status = os.waitpid(pid, 0)
+        os.close(fd)
+    assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
+
+
 def test_session_is_saved_and_can_be_resumed(tmp_path: Path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()

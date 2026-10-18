@@ -50,6 +50,7 @@ class _TranscriptItem:
     role: str
     text: str = ""
     response_id: int | None = None
+    incomplete: bool = False
 
 
 @dataclass
@@ -159,8 +160,13 @@ async def run_tui(
                         not isinstance(response_id, int) or response_id < 0
                     ):
                         response_id = None
+                    incomplete = item.get("incomplete", False)
+                    if type(incomplete) is not bool:
+                        incomplete = False
                     state.items.append(
-                        _TranscriptItem(item["role"], item["text"], response_id)
+                        _TranscriptItem(
+                            item["role"], item["text"], response_id, incomplete
+                        )
                     )
         raw_responses = session_record.get("ui", {}).get("responses", [])
         if isinstance(raw_responses, list):
@@ -196,9 +202,13 @@ async def run_tui(
                 chunks.extend(f"  {line}\n" for line in (item.text.splitlines() or [""]))
             elif item.role == "assistant":
                 label = (
-                    "Velocity-Mode · working"
-                    if item.response_id is None and state.busy
-                    else "Velocity-Mode"
+                    "Velocity-Mode · partial"
+                    if item.incomplete
+                    else (
+                        "Velocity-Mode · working"
+                        if item.response_id is None and state.busy
+                        else "Velocity-Mode"
+                    )
                 )
                 chunks.append(f"\n{label}\n")
                 chunks.extend(f"  {line}\n" for line in (item.text.splitlines() or [""]))
@@ -311,6 +321,7 @@ async def run_tui(
                     "role": item.role,
                     "text": item.text,
                     "response_id": item.response_id,
+                    "incomplete": item.incomplete,
                 }
                 for item in state.items
             ],
@@ -412,10 +423,11 @@ async def run_tui(
             add_notice(f"Yanked visual selection ({len(selected_text)} characters).")
 
     def open_transcript(app: Application) -> None:
-        if not state.responses:
+        if not state.items:
             add_notice("No responses yet.")
             return
-        state.selected_response = len(state.responses) - 1
+        if state.responses:
+            state.selected_response = len(state.responses) - 1
         refresh_selection_marker(app)
         app.layout.focus(transcript)
         app.vi_state.input_mode = app.vi_state.input_mode.__class__.NAVIGATION
@@ -466,6 +478,7 @@ async def run_tui(
                         state.activities = state.activities[-3:]
                         app.invalidate()
                     elif event.kind == "error":
+                        assistant_item.incomplete = True
                         state.items.append(_TranscriptItem("notice", f"Error: {event.text}"))
                         app.invalidate()
                     elif event.kind == "done":
@@ -479,13 +492,24 @@ async def run_tui(
                             del state.responses[:-MAX_RESPONSES]
                             state.selected_response = len(state.responses) - 1
             except asyncio.CancelledError:
+                assistant_item.incomplete = bool(assistant_item.text)
                 state.activities.append("Task cancelled")
                 raise
             except Exception as exc:
+                assistant_item.incomplete = bool(assistant_item.text)
                 state.items.append(
                     _TranscriptItem("notice", f"Agent failed: {exc}")
                 )
             finally:
+                if assistant_item.text and assistant_item.response_id is None:
+                    assistant_item.incomplete = True
+                    assistant_item.response_id = state.next_response_id
+                    state.next_response_id += 1
+                    state.responses.append(
+                        _Response(assistant_item.response_id, assistant_item.text)
+                    )
+                    del state.responses[:-MAX_RESPONSES]
+                    state.selected_response = len(state.responses) - 1
                 state.busy = False
                 state.pending_approval = ""
                 state.approval_future = None
