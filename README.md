@@ -5,14 +5,29 @@ terminal editor. It streams model responses and supports bounded tool calls.
 Hugging Face is the first live provider; a deterministic mock supports offline
 development and tests.
 
-## Install and run
+## Install
+
+On Linux, install the latest version from the public GitHub repository with:
 
 ```sh
-python3.11 -m venv .venv
-. .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e '.[test]'
+curl -fsSL https://raw.githubusercontent.com/josnin/velocity-mode/main/install.sh \
+  -o install.sh
+less install.sh
+sh install.sh
+```
 
+The installer uses Python 3.11 or newer, creates an isolated virtual
+environment under `$XDG_DATA_HOME/vmode/venv` (or
+`~/.local/share/vmode/venv` when `XDG_DATA_HOME` is unset), and places a
+`vmode` launcher in `~/.local/bin`. It does not use `sudo` or modify shell
+startup files. If `~/.local/bin` is not on your `PATH`, add it using your
+shell's normal configuration. Re-run the installer to update. The installer
+requires Git when installing from the GitHub URL; when run from a Git
+checkout, it installs that checkout instead.
+
+## Run
+
+```sh
 vmode --help
 vmode --version
 vmode
@@ -26,6 +41,19 @@ vmode --exec --provider mock --mock-scenario read-file \
 The final command exercises the complete offline model → `read_file` tool →
 tool-result message → second model response cycle. The default mock only
 returns a deterministic response; it never accesses files or processes.
+
+## Install from source
+
+For development or to install from a local checkout:
+
+```sh
+git clone https://github.com/josnin/velocity-mode.git
+cd velocity-mode
+python3.11 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e '.[test]'
+```
 
 Interactive sessions are automatically saved locally as you type and as model
 responses arrive. If the TUI closes unexpectedly, run `vmode --resume` to
