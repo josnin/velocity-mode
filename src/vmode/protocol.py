@@ -80,7 +80,7 @@ class AgentEvent:
 
 @dataclass(slots=True)
 class AgentLimits:
-    max_iterations: int = 12
+    max_iterations: int = 24
     max_tool_calls: int = 32
     max_tool_calls_per_response: int = 8
     timeout_seconds: float = 300.0

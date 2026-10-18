@@ -192,8 +192,17 @@ max_output_tokens = 2048
 tool_calling = true
 
 [agent]
-max_iterations = 12
+max_iterations = 24
 ```
+
+The agent allows up to 24 provider request/response iterations per task by
+default (maximum 100). Tool calls that need follow-up model work consume
+iterations; tasks with many sequential tool steps may need more. Increase it
+with `--max-iterations 40` or `[agent] max_iterations = 40`. The run still
+obeys the configured overall timeout and tool-call limits. If the limit keeps
+being reached, check the transcript for repeated tool calls or a model that
+does not produce a final answer; raising the limit alone may just allow an
+unproductive loop to continue.
 
 Supported environment overrides are `VMODE_PROVIDER`, `VMODE_MODEL`,
 `VMODE_BASE_URL`, `VMODE_TIMEOUT`, `VMODE_MAX_OUTPUT_TOKENS`,

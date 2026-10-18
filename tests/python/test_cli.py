@@ -147,6 +147,21 @@ def test_cli_offers_documented_modes_and_explicit_noninteractive_flag():
     assert {"provider", "model", "workspace", "noninteractive"} <= actions
 
 
+def test_default_agent_iteration_limit_is_24(tmp_path: Path):
+    args = Namespace(
+        config=str(tmp_path / "missing.toml"),
+        provider=None,
+        model=None,
+        base_url=None,
+        timeout=None,
+        max_iterations=None,
+        max_output_tokens=None,
+        tool_calling=None,
+        workspace=str(tmp_path),
+    )
+    assert load_settings(args).max_iterations == 24
+
+
 def test_prompt_completer_provides_commands_and_file_references(tmp_path: Path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "app.py").write_text("pass\n", encoding="utf-8")

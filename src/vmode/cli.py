@@ -98,7 +98,11 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model")
     parser.add_argument("--base-url")
     parser.add_argument("--timeout", type=float)
-    parser.add_argument("--max-iterations", type=int)
+    parser.add_argument(
+        "--max-iterations",
+        type=int,
+        help="maximum provider requests per task (default: 24; max: 100)",
+    )
     parser.add_argument("--max-output-tokens", type=int)
     parser.add_argument(
         "--tool-calling",

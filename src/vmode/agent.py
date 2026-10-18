@@ -148,7 +148,13 @@ class Agent:
                 self.history.append(
                     Message("tool", content, tool_call_id=call.id, name=call.name)
                 )
-        yield AgentEvent("error", "Agent iteration limit reached.")
+        request_word = "request" if self.limits.max_iterations == 1 else "requests"
+        yield AgentEvent(
+            "error",
+            f"Agent iteration limit reached after {self.limits.max_iterations} "
+            f"provider {request_word}. Increase [agent].max_iterations or "
+            "--max-iterations if this task needs more tool cycles.",
+        )
 
     def _prune_history(self, keep_turns: int, max_chars: int) -> int:
         system_messages = [message for message in self.history if message.role == "system"]

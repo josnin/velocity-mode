@@ -56,6 +56,8 @@ async def test_agent_stops_at_iteration_limit(tmp_path: Path):
     events = [event async for event in agent.run("Inspect the project")]
     assert events[-1].kind == "error"
     assert "iteration limit" in events[-1].text
+    assert "--max-iterations" in events[-1].text
+    assert "1 provider request." in events[-1].text
 
 
 @pytest.mark.asyncio
