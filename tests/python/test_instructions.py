@@ -19,6 +19,16 @@ def test_workspace_agents_and_skills_are_added_as_bounded_context(tmp_path: Path
     assert "cannot override safety requirements" in prompt
 
 
+def test_tool_capable_prompt_directs_workspace_study_without_user_file_selection(
+    tmp_path: Path,
+):
+    prompt = build_system_prompt(MockProvider(scenario="read-file"), tmp_path)
+
+    assert "study, inspect, review, or understand the workspace" in prompt
+    assert "starting with a file listing and then reading relevant files" in prompt
+    assert "Do not ask the user to name a file or directory" in prompt
+
+
 def test_workspace_instruction_symlinks_and_invalid_utf8_are_rejected(tmp_path: Path):
     outside = tmp_path.parent / "outside-instructions.md"
     outside.write_text("external", encoding="utf-8")

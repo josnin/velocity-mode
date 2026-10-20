@@ -67,9 +67,10 @@ The mock is deterministic and offline; its `read-file` scenario demonstrates
 the full tool cycle. The live adapters implement streaming OpenAI Chat
 Completions only. Responses API and separate Inference Endpoint protocols are
 not implemented; compatibility can vary between vendors.
-Ollama uses the same normalized Chat Completions stream but accepts HTTP only
-for `localhost` or a loopback IP address; it requires no API key and rejects
-remote hosts.
+Ollama uses the same normalized Chat Completions stream and accepts HTTP or
+HTTPS endpoints without URL credentials; it requires no API key. HTTP should
+be used only on a trusted network because prompts and responses are not
+transport encrypted.
 
 Provider capabilities explicitly report streaming and tool-call support.
 Hugging Face tool calling is enabled by default; for generic compatible
