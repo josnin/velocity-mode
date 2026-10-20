@@ -7,6 +7,7 @@ import pytest
 from vmode.protocol import Message, ProviderError
 from vmode.providers import (
     HuggingFaceProvider,
+    OllamaProvider,
     OpenAICompatibleProvider,
     _sse_data,
 )
@@ -346,3 +347,43 @@ async def test_openai_compatible_provider_requires_explicit_key_and_tool_capabil
     with pytest.raises(ProviderError, match="tool calling is not enabled"):
         async for _ in provider.stream([Message("user", "read file")], []):
             pass
+
+
+@pytest.mark.asyncio
+async def test_ollama_uses_local_http_without_an_api_key():
+    captured = {}
+    data = (
+        b'data: {"choices":[{"delta":{"content":"local"},"finish_reason":"stop"}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+
+    async def handler(request):
+        captured["url"] = str(request.url)
+        captured["authorization"] = request.headers.get("authorization")
+        return httpx.Response(200, stream=ByteStream([data]))
+
+    provider = OllamaProvider(
+        "llama3.2",
+        transport=httpx.MockTransport(handler),
+    )
+    events = [
+        event async for event in provider.stream([Message("user", "hello")], [])
+    ]
+
+    assert provider.name == "ollama"
+    assert captured["url"] == "http://127.0.0.1:11434/v1/chat/completions"
+    assert captured["authorization"] is None
+    assert "".join(event.text for event in events if event.kind == "text") == "local"
+
+
+@pytest.mark.asyncio
+async def test_ollama_rejects_non_loopback_endpoints():
+    for url in (
+        "http://example.test/v1",
+        "https://example.test/v1",
+        "http://192.168.1.10:11434/v1",
+    ):
+        provider = OllamaProvider("llama3.2", base_url=url)
+        with pytest.raises(ProviderError, match="loopback|HTTPS"):
+            async for _ in provider.stream([Message("user", "hello")], []):
+                pass

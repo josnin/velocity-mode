@@ -192,6 +192,20 @@ def test_openai_compatible_provider_is_configurable_and_tools_default_off(
         make_provider(settings, args)
 
 
+def test_ollama_provider_defaults_to_local_endpoint_and_tools_off(tmp_path, monkeypatch):
+    monkeypatch.delenv("VMODE_PROVIDER", raising=False)
+    monkeypatch.delenv("VMODE_TOOL_CALLING", raising=False)
+    args = make_parser().parse_args(
+        ["--provider", "ollama", "--model", "llama3.2", "--workspace", str(tmp_path)]
+    )
+    settings = load_settings(args)
+    provider = make_provider(settings, args)
+
+    assert provider.name == "ollama"
+    assert provider.base_url == "http://127.0.0.1:11434/v1"
+    assert not provider.capabilities.tool_calling
+
+
 def test_cli_offers_documented_modes_and_explicit_noninteractive_flag():
     parser = make_parser()
     actions = {action.dest for action in parser._actions}

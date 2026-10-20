@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import codecs
+import ipaddress
 import json
 import os
 import email.utils
@@ -113,6 +114,9 @@ class OpenAICompatibleProvider:
         token_env: str = "VMODE_API_KEY",
         provider_label: str = "OpenAI-compatible provider",
         huggingface_routing: bool = False,
+        allow_loopback_http: bool = False,
+        loopback_only: bool = False,
+        requires_token: bool = True,
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")
@@ -121,6 +125,9 @@ class OpenAICompatibleProvider:
         self.token_env = token_env
         self.provider_label = provider_label
         self.huggingface_routing = huggingface_routing
+        self.allow_loopback_http = allow_loopback_http
+        self.loopback_only = loopback_only
+        self.requires_token = requires_token
         self.capabilities = ProviderCapabilities(
             streaming=True,
             tool_calling=supports_tool_calling,
@@ -131,15 +138,19 @@ class OpenAICompatibleProvider:
     async def stream(
         self, messages: Sequence[Message], tools: Sequence[dict]
     ) -> AsyncIterator[ProviderEvent]:
-        if not self._token:
+        if self.requires_token and not self._token:
             raise ProviderError(f"{self.token_env} is missing. Set it in your environment.")
         try:
             parsed_url = urlsplit(self.base_url)
             parsed_url.port
         except ValueError as exc:
             raise ProviderError(f"{self.provider_label} base URL is invalid.") from exc
+        is_loopback = _is_loopback_host(parsed_url.hostname)
+        valid_scheme = parsed_url.scheme == "https" or (
+            self.allow_loopback_http and parsed_url.scheme == "http" and is_loopback
+        )
         if (
-            parsed_url.scheme != "https"
+            not valid_scheme
             or not parsed_url.hostname
             or parsed_url.username is not None
             or parsed_url.password is not None
@@ -148,6 +159,10 @@ class OpenAICompatibleProvider:
         ):
             raise ProviderError(
                 f"{self.provider_label} base URL must be HTTPS without URL credentials."
+            )
+        if self.loopback_only and not is_loopback:
+            raise ProviderError(
+                f"{self.provider_label} base URL must use a loopback host."
             )
         payload: dict = {
             "model": self.model,
@@ -159,10 +174,9 @@ class OpenAICompatibleProvider:
         if tools and self.capabilities.tool_calling:
             payload["tools"] = list(tools)
             payload["tool_choice"] = "auto"
-        headers = {
-            "Authorization": "Bearer " + self._token,
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
+        if self._token:
+            headers["Authorization"] = "Bearer " + self._token
         timeout = httpx.Timeout(self.timeout, connect=min(self.timeout, 15))
         tool_deltas: dict[int, dict] = {}
         finish_reason = None
@@ -399,6 +413,47 @@ class HuggingFaceProvider(OpenAICompatibleProvider):
             raise ProviderError(message) from exc
 
 
+class OllamaProvider(OpenAICompatibleProvider):
+    """Streaming Ollama OpenAI-compatible endpoint on a local loopback host."""
+
+    name = "ollama"
+
+    def __init__(
+        self,
+        model: str,
+        base_url: str = "http://127.0.0.1:11434/v1",
+        timeout: float = 60.0,
+        max_output_tokens: int = 4096,
+        supports_tool_calling: bool = False,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
+        super().__init__(
+            model,
+            base_url,
+            timeout,
+            max_output_tokens,
+            supports_tool_calling,
+            token="",
+            transport=transport,
+            token_env="",
+            provider_label="Ollama",
+            allow_loopback_http=True,
+            loopback_only=True,
+            requires_token=False,
+        )
+
+
+def _is_loopback_host(hostname: str | None) -> bool:
+    if hostname is None:
+        return False
+    if hostname.rstrip(".").lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
 class _SecretRedactor:
     def __init__(self, secret: str):
         self.secret = secret
@@ -471,7 +526,11 @@ def _http_error(
 ) -> str:
     folded = body.lower()
     if status == 401:
-        reason = f"{token_env} was rejected. Check that the key is valid and has access to the endpoint."
+        reason = (
+            f"{token_env} was rejected. Check that the key is valid and has access to the endpoint."
+            if token_env
+            else f"{provider_label} rejected the request."
+        )
     elif status == 403 or status == 402 or "credit" in folded or "payment" in folded:
         reason = f"{provider_label} access was denied or credits are unavailable. Check endpoint permissions and billing. No retry was performed."
     elif status == 404:

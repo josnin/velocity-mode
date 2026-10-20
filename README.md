@@ -176,6 +176,26 @@ max_output_tokens = 4096
 tool_calling = false
 ```
 
+## Ollama
+
+Velocity-Mode can call a locally running Ollama server through its
+OpenAI-compatible Chat Completions endpoint. Pull a model, then use the
+`ollama` provider:
+
+```sh
+ollama pull llama3.2
+vmode --provider ollama --model llama3.2 \
+  "Explain the selected source"
+```
+
+The default endpoint is `http://127.0.0.1:11434/v1`; no API key is required.
+For another local listener, pass a loopback URL such as
+`--base-url http://localhost:11434/v1`. Ollama deliberately rejects remote
+hosts and non-loopback HTTP URLs, so local prompts cannot be sent to an
+arbitrary cleartext endpoint. Tool calling remains off by default because
+support depends on the selected model; enable it explicitly with
+`--tool-calling` only for a model and Ollama version that support tools.
+
 ## Configuration
 
 Configuration is read from `~/.config/vmode/config.toml` or `VMODE_CONFIG`.
@@ -226,7 +246,7 @@ Supported environment overrides are `VMODE_PROVIDER`, `VMODE_MODEL`,
 `VMODE_TOOL_CALLING`, and `VMODE_CONFIG`. Hugging Face uses `HF_TOKEN`;
 OpenAI-compatible endpoints use `VMODE_API_KEY`. Credentials are only read
 from the environment at runtime. Tool calling defaults on for Hugging Face,
-off for OpenAI-compatible endpoints and the default mock, and on for the mock
+off for Ollama, OpenAI-compatible endpoints, and the default mock, and on for the mock
 `read-file` scenario.
 Disable it with `--no-tool-calling`, `VMODE_TOOL_CALLING=false`, or `tool_calling = false` if the selected
 model/provider does not support tools.

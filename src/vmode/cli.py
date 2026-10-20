@@ -19,6 +19,7 @@ from .protocol import AgentLimits
 from .providers import (
     HuggingFaceProvider,
     MockProvider,
+    OllamaProvider,
     OpenAICompatibleProvider,
     Provider,
 )
@@ -95,7 +96,7 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("prompt", nargs="?", help="initial task or prompt")
     parser.add_argument("--version", action="version", version=f"vmode {__version__}")
     parser.add_argument(
-        "--provider", choices=("mock", "huggingface", "openai-compatible")
+        "--provider", choices=("mock", "huggingface", "ollama", "openai-compatible")
     )
     parser.add_argument("--model")
     parser.add_argument("--base-url")
@@ -189,6 +190,16 @@ def make_provider(settings: Settings, args: argparse.Namespace) -> Provider:
         return OpenAICompatibleProvider(
             settings.model,
             settings.base_url,
+            settings.timeout,
+            settings.max_output_tokens,
+            supports_tool_calling=settings.tool_calling,
+        )
+    if settings.provider == "ollama":
+        if settings.model == "mock/deterministic":
+            raise ValueError("Ollama requires a model ID; set --model or VMODE_MODEL")
+        return OllamaProvider(
+            settings.model,
+            settings.base_url or "http://127.0.0.1:11434/v1",
             settings.timeout,
             settings.max_output_tokens,
             supports_tool_calling=settings.tool_calling,
