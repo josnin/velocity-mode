@@ -78,7 +78,7 @@ then export it for the current shell:
 
 ```sh
 export HF_TOKEN="your_hugging_face_token"
-vmode --provider huggingface --model "openai/gpt-oss-120b:cheapest"
+vmode --provider huggingface --model "openai/gpt-oss-120b:featherless-ai"
 ```
 
 For one-shot use:
@@ -178,14 +178,14 @@ tool_calling = false
 
 ## Ollama
 
-Velocity-Mode can call a locally running Ollama server through its
-OpenAI-compatible Chat Completions endpoint. Pull a model, then use the
-`ollama` provider:
+Velocity-Mode can call a local or remote Ollama server through its
+OpenAI-compatible Chat Completions endpoint. The following tool-capable
+configuration has been verified:
 
 ```sh
-ollama pull llama3.2
-vmode --provider ollama --model llama3.2 \
-  "Explain the selected source"
+vmode --provider ollama --model qwen2.5:1.5b \
+  --base-url http://192.168.64.1:11434/v1 \
+  --tool-calling
 ```
 
 The default endpoint is `http://127.0.0.1:11434/v1`; no API key is required.
