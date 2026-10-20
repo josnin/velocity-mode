@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import json
 import os
 import re
 import signal
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 EXCLUDED = {".git", ".hg", ".svn", "build", "dist", "target", "node_modules", ".venv", "__pycache__"}
+MAX_DISCOVERED_FILES = 1_000
+MAX_SEARCH_MATCHES = 500
+MAX_SEARCH_FILE_BYTES = 2_000_000
 
 
 class ToolError(RuntimeError):
@@ -29,7 +34,12 @@ def definitions() -> list[dict[str, Any]]:
     return [
         _function("read_file", "Read a UTF-8 project file", {"path": {"type": "string"}}),
         _function("list_files", "List permitted project files", {"pattern": {"type": "string"}}, required=[]),
-        _function("search_files", "Search text in project files", {"query": {"type": "string"}}),
+        _function(
+            "search_files",
+            "Search project files with a smart-case regular expression; set literal to true for exact text",
+            {"query": {"type": "string"}, "literal": {"type": "boolean"}},
+            required=["query"],
+        ),
         _function("write_file", "Write UTF-8 content to a project file; requires approval", {"path": {"type": "string"}, "content": {"type": "string"}}),
         _function("run_command", "Run an approved command using argv in the project directory", {"argv": {"type": "array", "items": {"type": "string"}}}),
     ]
@@ -42,11 +52,14 @@ def _function(name: str, description: str, properties: dict,
 
 class ToolRegistry:
     def __init__(self, workspace: Path, approve: Approval | None = None,
-                 output_limit: int = 100_000, command_timeout: float = 60.0):
+                 output_limit: int = 100_000, command_timeout: float = 60.0,
+                 search_timeout: float = 10.0, rg_executable: str = "rg"):
         self.root = workspace.resolve()
         self.approve = approve
         self.output_limit = output_limit
         self.command_timeout = command_timeout
+        self.search_timeout = search_timeout
+        self.rg_executable = rg_executable
         self._ignore_patterns: tuple[str, ...] | None = None
 
     def attach_references(self, prompt: str, per_file_limit: int = 200_000,
@@ -135,13 +148,13 @@ class ToolRegistry:
         scanned = 0
         for current, dirs, files in os.walk(self.root, topdown=True, followlinks=False):
             base = Path(current)
-            dirs[:] = [
+            dirs[:] = sorted(
                 name for name in dirs
                 if name not in EXCLUDED
                 and not (base / name).is_symlink()
                 and not self._ignored(base / name)
-            ]
-            for name in files:
+            )
+            for name in sorted(files):
                 path = base / name
                 scanned += 1
                 if scanned > 20_000:
@@ -155,7 +168,7 @@ class ToolRegistry:
         schemas = {
             "read_file": ({"path"}, {"path"}),
             "list_files": (set(), {"pattern"}),
-            "search_files": ({"query"}, {"query"}),
+            "search_files": ({"query"}, {"query", "literal"}),
             "write_file": ({"path", "content"}, {"path", "content"}),
             "run_command": ({"argv"}, {"argv"}),
         }
@@ -180,45 +193,15 @@ class ToolRegistry:
             pattern = arguments.get("pattern", "*")
             if not isinstance(pattern, str):
                 raise ToolError("pattern must be a string")
-            paths = []
-            for path in self.iter_files():
-                rel = path.relative_to(self.root)
-                if path.is_file() and fnmatch.fnmatch(rel.as_posix(), pattern):
-                    paths.append(rel.as_posix())
-                    if len(paths) >= 1000:
-                        break
-            return ToolResult("\n".join(paths))
+            return ToolResult(await self._list_files(pattern))
         if name == "search_files":
             query = arguments.get("query")
             if not isinstance(query, str) or not query:
                 raise ToolError("query must be a non-empty string")
-            rows = []
-            total_chars = 0
-            for path in self.iter_files():
-                rel = path.relative_to(self.root)
-                if not path.is_file():
-                    continue
-                try:
-                    if path.stat().st_size > min(self.output_limit, 2_000_000):
-                        continue
-                    lines = path.read_text(encoding="utf-8").splitlines()
-                except (OSError, UnicodeError):
-                    continue
-                for number, line in enumerate(lines, 1):
-                    if query not in line:
-                        continue
-                    row = f"{rel}:{number}: {line}"
-                    remaining = self.output_limit - total_chars
-                    if remaining <= 0:
-                        break
-                    row = row[:remaining]
-                    rows.append(row)
-                    total_chars += len(row)
-                    if total_chars >= self.output_limit:
-                        break
-                if total_chars >= self.output_limit:
-                    break
-            return ToolResult("\n".join(rows))
+            literal = arguments.get("literal", False)
+            if type(literal) is not bool:
+                raise ToolError("literal must be a boolean")
+            return ToolResult(await self._search_files(query, literal))
         if name == "write_file":
             path, content = self._path(arguments.get("path")), arguments.get("content")
             if not isinstance(content, str):
@@ -272,6 +255,240 @@ class ToolRegistry:
                 text += "\n[output truncated]"
             return ToolResult(f"exit code: {process.returncode}\n{text}")
         raise ToolError(f"unknown tool: {name}")
+
+    async def _list_files(self, pattern: str) -> str:
+        completed = await self._run_rg(["--files", "--null", *self._rg_scope_flags()])
+        if completed is None:
+            paths, truncated = await self._list_files_fallback(pattern)
+            return self._structured_result(
+                "paths", paths, "python", truncated, "ripgrep unavailable"
+            )
+        stdout, stderr, returncode, output_truncated = completed
+        if returncode not in {0, 1}:
+            raise ToolError(self._rg_error("file discovery", returncode, stderr))
+        paths = []
+        truncated = output_truncated
+        values = stdout.decode(errors="replace").split("\0")
+        if output_truncated and values[-1]:
+            values.pop()
+        for value in values:
+            if not value:
+                continue
+            if fnmatch.fnmatch(value, pattern):
+                paths.append(value)
+                if len(paths) >= MAX_DISCOVERED_FILES:
+                    truncated = True
+                    break
+        return self._structured_result("paths", paths, "rg", truncated)
+
+    async def _search_files(self, query: str, literal: bool) -> str:
+        if "\n" in query or "\r" in query:
+            raise ToolError("search query must be a single line")
+        args = [
+            "--json",
+            "--smart-case",
+            "--hidden",
+            "--max-filesize",
+            str(MAX_SEARCH_FILE_BYTES),
+            *self._rg_scope_flags(),
+        ]
+        if literal:
+            args.append("--fixed-strings")
+        args.extend(("--", query))
+        completed = await self._run_rg(args)
+        if completed is None:
+            matches, truncated = await self._search_files_fallback(query, literal)
+            return self._structured_result(
+                "matches", matches, "python", truncated, "ripgrep unavailable"
+            )
+        stdout, stderr, returncode, output_truncated = completed
+        if returncode == 1:
+            return self._structured_result("matches", [], "rg", output_truncated)
+        if returncode != 0:
+            message = stderr.decode(errors="replace").strip()
+            if "No files were searched" in message:
+                return self._structured_result("matches", [], "rg", output_truncated)
+            if "regex" in message.lower():
+                raise ToolError(f"invalid search regex: {message}")
+            raise ToolError(self._rg_error("search", returncode, stderr))
+        matches = []
+        truncated = output_truncated
+        lines = stdout.decode(errors="replace").splitlines()
+        if output_truncated and stdout and not stdout.endswith(b"\n"):
+            lines.pop()
+        for line in lines:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ToolError("ripgrep returned malformed search output") from exc
+            if event.get("type") != "match":
+                continue
+            data = event.get("data", {})
+            path = data.get("path", {}).get("text")
+            line_number = data.get("line_number")
+            text = data.get("lines", {}).get("text")
+            if not isinstance(path, str) or type(line_number) is not int or not isinstance(text, str):
+                raise ToolError("ripgrep returned malformed search match")
+            matches.append(
+                {"path": path, "line": line_number, "text": text.rstrip("\r\n")}
+            )
+            if len(matches) >= MAX_SEARCH_MATCHES:
+                truncated = True
+                break
+        return self._structured_result("matches", matches, "rg", truncated)
+
+    def _rg_scope_flags(self) -> list[str]:
+        flags = ["--hidden"]
+        for directory in sorted(EXCLUDED):
+            flags.extend(
+                (
+                    "--glob",
+                    f"!{directory}/**",
+                    "--glob",
+                    f"!**/{directory}/**",
+                )
+            )
+        return flags
+
+    async def _run_rg(
+        self, arguments: list[str]
+    ) -> tuple[bytes, bytes, int, bool] | None:
+        try:
+            environment = {
+                "PATH": os.environ.get("PATH", ""),
+                "RIPGREP_CONFIG_PATH": os.devnull,
+            }
+            environment.update(
+                {
+                    key: value
+                    for key in ("LANG", "LC_ALL")
+                    if (value := os.environ.get(key))
+                }
+            )
+            process = await asyncio.create_subprocess_exec(
+                self.rg_executable,
+                *arguments,
+                cwd=self.root,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=environment,
+            )
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise ToolError(f"cannot start ripgrep: {exc.strerror}") from exc
+
+        async def read_limited(stream: asyncio.StreamReader) -> tuple[bytes, bool]:
+            output = bytearray()
+            truncated = False
+            while chunk := await stream.read(8192):
+                remaining = self.output_limit - len(output)
+                output.extend(chunk[:max(0, remaining)])
+                truncated = truncated or len(chunk) > remaining
+            return bytes(output), truncated
+
+        try:
+            (stdout, stdout_truncated), (stderr, stderr_truncated), _ = (
+                await asyncio.wait_for(
+                    asyncio.gather(
+                        read_limited(process.stdout),
+                        read_limited(process.stderr),
+                        process.wait(),
+                    ),
+                    self.search_timeout,
+                )
+            )
+        except (TimeoutError, asyncio.CancelledError):
+            if process.returncode is None:
+                process.terminate()
+            await process.wait()
+            raise ToolError("ripgrep search timed out")
+        return stdout, stderr, process.returncode, stdout_truncated or stderr_truncated
+
+    async def _list_files_fallback(self, pattern: str) -> tuple[list[str], bool]:
+        paths = []
+        truncated = False
+        deadline = time.monotonic() + self.search_timeout
+        for path in self.iter_files():
+            if time.monotonic() >= deadline:
+                raise ToolError("Python fallback search timed out")
+            relative = path.relative_to(self.root).as_posix()
+            if fnmatch.fnmatch(relative, pattern):
+                paths.append(relative)
+                if len(paths) >= MAX_DISCOVERED_FILES:
+                    truncated = True
+                    break
+            await asyncio.sleep(0)
+        return paths, truncated
+
+    async def _search_files_fallback(
+        self, query: str, literal: bool
+    ) -> tuple[list[dict[str, Any]], bool]:
+        pattern = re.escape(query) if literal else query
+        flags = re.IGNORECASE if query.lower() == query else 0
+        try:
+            matcher = re.compile(pattern, flags)
+        except re.error as exc:
+            raise ToolError(f"invalid search regex: {exc}") from exc
+        matches = []
+        truncated = False
+        deadline = time.monotonic() + self.search_timeout
+        for path in self.iter_files():
+            if time.monotonic() >= deadline:
+                raise ToolError("Python fallback search timed out")
+            try:
+                if path.stat().st_size > MAX_SEARCH_FILE_BYTES:
+                    continue
+                data = path.read_bytes()
+            except OSError:
+                continue
+            if b"\0" in data:
+                continue
+            try:
+                lines = data.decode("utf-8").splitlines()
+            except UnicodeDecodeError:
+                continue
+            relative = path.relative_to(self.root).as_posix()
+            for line_number, text in enumerate(lines, 1):
+                if matcher.search(text):
+                    matches.append(
+                        {"path": relative, "line": line_number, "text": text}
+                    )
+                    if len(matches) >= MAX_SEARCH_MATCHES:
+                        truncated = True
+                        break
+            if truncated:
+                break
+            await asyncio.sleep(0)
+        return matches, truncated
+
+    def _structured_result(
+        self,
+        field: str,
+        values: list[Any],
+        backend: str,
+        truncated: bool,
+        fallback_reason: str | None = None,
+    ) -> str:
+        while True:
+            payload: dict[str, Any] = {
+                field: values,
+                "truncated": truncated,
+                "backend": backend,
+            }
+            if fallback_reason is not None:
+                payload["fallback_reason"] = fallback_reason
+            content = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            if len(content) <= self.output_limit or not values:
+                return content
+            values.pop()
+            truncated = True
+
+    @staticmethod
+    def _rg_error(operation: str, returncode: int, stderr: bytes) -> str:
+        detail = stderr.decode(errors="replace").strip()
+        suffix = f": {detail}" if detail else ""
+        return f"ripgrep {operation} failed with exit code {returncode}{suffix}"
 
     async def _approval(self, name: str, arguments: dict[str, Any]) -> bool:
         if self.approve is None:

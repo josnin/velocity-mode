@@ -1,8 +1,17 @@
+import json
+import shutil
+import sys
 from pathlib import Path
 
 import pytest
 
-from vmode.tools import ToolError, ToolRegistry
+from vmode.tools import ToolError, ToolRegistry, definitions
+
+RG_AVAILABLE = shutil.which("rg") is not None
+
+
+def _result_content(result):
+    return json.loads(result.content)
 
 
 @pytest.mark.asyncio
@@ -15,6 +24,176 @@ async def test_file_tools_are_workspace_limited_and_search_files(tmp_path: Path)
     assert "needle" in (await registry.invoke("search_files", {"query": "needle"})).content
     with pytest.raises(ToolError, match="workspace"):
         await registry.invoke("read_file", {"path": "../outside.txt"})
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not RG_AVAILABLE, reason="ripgrep is not installed")
+async def test_ripgrep_search_supports_regex_smart_case_and_literals(tmp_path: Path):
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "search file [1].txt").write_text(
+        "needle\nNeedle\na+b\nab\n", encoding="utf-8"
+    )
+    registry = ToolRegistry(tmp_path)
+
+    smart_case = _result_content(
+        await registry.invoke("search_files", {"query": "needle"})
+    )
+    case_sensitive = _result_content(
+        await registry.invoke("search_files", {"query": "Needle"})
+    )
+    literal = _result_content(
+        await registry.invoke("search_files", {"query": "a+b", "literal": True})
+    )
+    regex = _result_content(
+        await registry.invoke("search_files", {"query": "a+b"})
+    )
+
+    assert smart_case["backend"] == "rg"
+    assert [match["text"] for match in smart_case["matches"]] == ["needle", "Needle"]
+    assert [match["text"] for match in case_sensitive["matches"]] == ["Needle"]
+    assert [match["text"] for match in literal["matches"]] == ["a+b"]
+    assert [match["text"] for match in regex["matches"]] == ["ab"]
+    assert literal["matches"][0]["path"] == "nested/search file [1].txt"
+    assert literal["matches"][0]["line"] == 3
+
+
+@pytest.mark.asyncio
+async def test_file_discovery_includes_hidden_and_respects_ignore_policy(tmp_path: Path):
+    (tmp_path / ".gitignore").write_text("ignored/\n*.secret\n", encoding="utf-8")
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / ".hidden.py").write_text("visible", encoding="utf-8")
+    (tmp_path / "nested" / "kept.txt").write_text("visible", encoding="utf-8")
+    (tmp_path / "ignored").mkdir()
+    (tmp_path / "ignored" / "skip.txt").write_text("hidden", encoding="utf-8")
+    (tmp_path / "token.secret").write_text("hidden", encoding="utf-8")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "skip.js").write_text("hidden", encoding="utf-8")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "config").write_text("hidden", encoding="utf-8")
+
+    result = _result_content(await ToolRegistry(tmp_path).invoke("list_files", {}))
+
+    assert result["backend"] in {"rg", "python"}
+    assert "nested/.hidden.py" in result["paths"]
+    assert "nested/kept.txt" in result["paths"]
+    assert "ignored/skip.txt" not in result["paths"]
+    assert "token.secret" not in result["paths"]
+    assert "node_modules/skip.js" not in result["paths"]
+    assert ".git/config" not in result["paths"]
+
+
+@pytest.mark.asyncio
+async def test_search_distinguishes_no_matches_and_invalid_regex(tmp_path: Path):
+    (tmp_path / "source.py").write_text("needle\n", encoding="utf-8")
+    registry = ToolRegistry(tmp_path)
+
+    no_matches = _result_content(
+        await registry.invoke("search_files", {"query": "absent"})
+    )
+    assert no_matches["matches"] == []
+    assert not no_matches["truncated"]
+    assert no_matches["backend"] in {"rg", "python"}
+    with pytest.raises(ToolError, match="invalid search regex"):
+        await registry.invoke("search_files", {"query": "["})
+
+
+@pytest.mark.asyncio
+async def test_missing_ripgrep_uses_conservative_python_fallback(tmp_path: Path):
+    (tmp_path / ".gitignore").write_text("ignored/\n", encoding="utf-8")
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / ".hidden.txt").write_text("Needle\n", encoding="utf-8")
+    (tmp_path / "ignored").mkdir()
+    (tmp_path / "ignored" / "skip.txt").write_text("Needle\n", encoding="utf-8")
+    registry = ToolRegistry(tmp_path, rg_executable="missing-rg")
+
+    listed = _result_content(await registry.invoke("list_files", {}))
+    searched = _result_content(await registry.invoke("search_files", {"query": "needle"}))
+
+    assert listed["backend"] == searched["backend"] == "python"
+    assert listed["fallback_reason"] == searched["fallback_reason"] == "ripgrep unavailable"
+    assert "nested/.hidden.txt" in listed["paths"]
+    assert "ignored/skip.txt" not in listed["paths"]
+    assert searched["matches"] == [
+        {"path": "nested/.hidden.txt", "line": 1, "text": "Needle"}
+    ]
+    with pytest.raises(ToolError, match="invalid search regex"):
+        await registry.invoke("search_files", {"query": "["})
+
+
+@pytest.mark.asyncio
+async def test_search_output_limits_and_result_caps_are_reported(tmp_path: Path):
+    (tmp_path / "many.txt").write_text(
+        "".join(f"needle {number}\n" for number in range(600)), encoding="utf-8"
+    )
+
+    capped = _result_content(
+        await ToolRegistry(tmp_path, output_limit=300).invoke(
+            "search_files", {"query": "needle"}
+        )
+    )
+    result_capped = _result_content(
+        await ToolRegistry(tmp_path).invoke("search_files", {"query": "needle"})
+    )
+
+    assert capped["truncated"]
+    assert len(json.dumps(capped, separators=(",", ":"))) <= 300
+    assert result_capped["truncated"]
+    assert len(result_capped["matches"]) == 500
+
+
+@pytest.mark.asyncio
+async def test_ripgrep_timeout_and_model_arguments_cannot_inject_flags(
+    tmp_path: Path,
+):
+    sleeper = tmp_path / "sleeping-rg"
+    sleeper.write_text(
+        f"#!{sys.executable}\nimport time\ntime.sleep(2)\n", encoding="utf-8"
+    )
+    sleeper.chmod(0o755)
+    with pytest.raises(ToolError, match="timed out"):
+        await ToolRegistry(
+            tmp_path, rg_executable=str(sleeper), search_timeout=0.01
+        ).invoke("search_files", {"query": "needle"})
+
+    (tmp_path / "source.txt").write_text("needle", encoding="utf-8")
+    result = _result_content(
+        await ToolRegistry(tmp_path).invoke(
+            "search_files", {"query": "--glob=!*", "literal": True}
+        )
+    )
+    assert result["matches"] == []
+    with pytest.raises(ToolError, match="literal must be a boolean"):
+        await ToolRegistry(tmp_path).invoke(
+            "search_files", {"query": "needle", "literal": "true"}
+        )
+    with pytest.raises(ToolError, match="Python fallback search timed out"):
+        await ToolRegistry(
+            tmp_path, rg_executable="missing-rg", search_timeout=0
+        ).invoke("search_files", {"query": "needle"})
+
+
+@pytest.mark.asyncio
+async def test_discovery_and_search_do_not_follow_symlink_escapes(
+    tmp_path: Path, tmp_path_factory
+):
+    outside = tmp_path_factory.mktemp("outside-search") / "secret.txt"
+    outside.write_text("needle", encoding="utf-8")
+    (tmp_path / "escape.txt").symlink_to(outside)
+    registry = ToolRegistry(tmp_path)
+
+    listed = _result_content(await registry.invoke("list_files", {}))
+    searched = _result_content(await registry.invoke("search_files", {"query": "needle"}))
+
+    assert "escape.txt" not in listed["paths"]
+    assert searched["matches"] == []
+
+
+def test_search_tool_schema_keeps_existing_calls_compatible():
+    search = next(
+        item["function"] for item in definitions() if item["function"]["name"] == "search_files"
+    )
+    assert search["parameters"]["required"] == ["query"]
+    assert search["parameters"]["properties"]["literal"] == {"type": "boolean"}
 
 
 @pytest.mark.asyncio
