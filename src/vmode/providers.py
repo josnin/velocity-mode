@@ -115,6 +115,7 @@ class OpenAICompatibleProvider:
         provider_label: str = "OpenAI-compatible provider",
         huggingface_routing: bool = False,
         allow_loopback_http: bool = False,
+        allow_http: bool = False,
         loopback_only: bool = False,
         requires_token: bool = True,
     ):
@@ -126,6 +127,7 @@ class OpenAICompatibleProvider:
         self.provider_label = provider_label
         self.huggingface_routing = huggingface_routing
         self.allow_loopback_http = allow_loopback_http
+        self.allow_http = allow_http
         self.loopback_only = loopback_only
         self.requires_token = requires_token
         self.capabilities = ProviderCapabilities(
@@ -147,7 +149,8 @@ class OpenAICompatibleProvider:
             raise ProviderError(f"{self.provider_label} base URL is invalid.") from exc
         is_loopback = _is_loopback_host(parsed_url.hostname)
         valid_scheme = parsed_url.scheme == "https" or (
-            self.allow_loopback_http and parsed_url.scheme == "http" and is_loopback
+            parsed_url.scheme == "http"
+            and (self.allow_http or (self.allow_loopback_http and is_loopback))
         )
         if (
             not valid_scheme
@@ -157,8 +160,10 @@ class OpenAICompatibleProvider:
             or parsed_url.query
             or parsed_url.fragment
         ):
+            scheme_requirement = "HTTP or HTTPS" if self.allow_http else "HTTPS"
             raise ProviderError(
-                f"{self.provider_label} base URL must be HTTPS without URL credentials."
+                f"{self.provider_label} base URL must use {scheme_requirement} "
+                "without URL credentials."
             )
         if self.loopback_only and not is_loopback:
             raise ProviderError(
@@ -414,7 +419,7 @@ class HuggingFaceProvider(OpenAICompatibleProvider):
 
 
 class OllamaProvider(OpenAICompatibleProvider):
-    """Streaming Ollama OpenAI-compatible endpoint on a local loopback host."""
+    """Streaming Ollama OpenAI-compatible endpoint."""
 
     name = "ollama"
 
@@ -437,8 +442,7 @@ class OllamaProvider(OpenAICompatibleProvider):
             transport=transport,
             token_env="",
             provider_label="Ollama",
-            allow_loopback_http=True,
-            loopback_only=True,
+            allow_http=True,
             requires_token=False,
         )
 

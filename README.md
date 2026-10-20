@@ -189,11 +189,12 @@ vmode --provider ollama --model llama3.2 \
 ```
 
 The default endpoint is `http://127.0.0.1:11434/v1`; no API key is required.
-For another local listener, pass a loopback URL such as
-`--base-url http://localhost:11434/v1`. Ollama deliberately rejects remote
-hosts and non-loopback HTTP URLs, so local prompts cannot be sent to an
-arbitrary cleartext endpoint. Tool calling remains off by default because
-support depends on the selected model; enable it explicitly with
+To use an Ollama server on another machine, provide its OpenAI-compatible
+endpoint, for example `--base-url http://192.168.64.1:11434/v1`. Ollama URLs
+may use HTTP or HTTPS but cannot contain URL credentials, query strings, or
+fragments. Use HTTP only on a trusted network because prompts and responses
+are sent without transport encryption. Tool calling remains off by default
+because support depends on the selected model; enable it explicitly with
 `--tool-calling` only for a model and Ollama version that support tools.
 
 ## Configuration

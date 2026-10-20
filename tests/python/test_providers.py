@@ -377,13 +377,33 @@ async def test_ollama_uses_local_http_without_an_api_key():
 
 
 @pytest.mark.asyncio
-async def test_ollama_rejects_non_loopback_endpoints():
+async def test_ollama_allows_remote_http_endpoints():
+    captured = {}
+    data = b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+
+    async def handler(request):
+        captured["url"] = str(request.url)
+        return httpx.Response(200, stream=ByteStream([data]))
+
+    provider = OllamaProvider(
+        "llama3.2",
+        base_url="http://192.168.64.1:11434/v1",
+        transport=httpx.MockTransport(handler),
+    )
+    async for _ in provider.stream([Message("user", "hello")], []):
+        pass
+
+    assert captured["url"] == "http://192.168.64.1:11434/v1/chat/completions"
+
+
+@pytest.mark.asyncio
+async def test_ollama_rejects_unsafe_endpoint_urls():
     for url in (
-        "http://example.test/v1",
-        "https://example.test/v1",
-        "http://192.168.1.10:11434/v1",
+        "ftp://ollama.example.test/v1",
+        "http://token@192.168.64.1:11434/v1",
+        "http://192.168.64.1:11434/v1?token=value",
     ):
         provider = OllamaProvider("llama3.2", base_url=url)
-        with pytest.raises(ProviderError, match="loopback|HTTPS"):
+        with pytest.raises(ProviderError, match="HTTP or HTTPS"):
             async for _ in provider.stream([Message("user", "hello")], []):
                 pass
