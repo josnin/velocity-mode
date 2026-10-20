@@ -319,12 +319,36 @@ they cannot override approval requirements, workspace restrictions, available
 tools, or higher-priority safety rules. Review their contents as you would
 other repository instructions.
 
+### `AGENTS.md` example
+
+Use `AGENTS.md` for concise, always-applicable repository guidance:
+
+```markdown
+# Project instructions
+
+- Use Python 3.11 and keep changes compatible with the existing public API.
+- Put tests beside the behavior they cover under `tests/python`.
+- Run `python -m pytest -q tests/python` after code changes.
+- Do not edit generated files under `dist/`.
+```
+
+`SKILLS.md` is also always-loaded general guidance. Use it for a short index
+or conventions that apply to all tasks, not for task-specific procedures:
+
+```markdown
+# Project skill notes
+
+- Python test work uses the `python-tests` selectable skill.
+- Release work must follow the repository release checklist.
+```
+
 ## Selectable workspace skills
 
 Optional task-specific skills live in `.vmode/skills/*.md`. A skill uses TOML
-front matter followed by its guidance:
+front matter followed by its guidance. For example, create
+`.vmode/skills/python-tests.md`:
 
-```toml
+```markdown
 +++
 id = "python-tests"
 version = "1.0.0"
@@ -332,8 +356,21 @@ description = "Run and interpret the Python test suite."
 tags = ["python", "testing"]
 triggers = ["pytest", "test"]
 +++
+
+# Python test workflow
+
+1. Inspect the focused tests and the code they cover before editing.
+2. Run the narrowest relevant test selector first.
+3. Run `python -m pytest -q tests/python` when changes affect shared behavior.
+
 Use the existing test helpers and run the focused suite first.
 ```
+
+`id`, `version`, and `description` are required. `id` uses lowercase letters,
+numbers, and hyphens; `tags` and `triggers` are optional string lists used for
+deterministic task matching. Increment `version` whenever the guidance changes.
+Skill guidance is scoped to the selected task, unlike `AGENTS.md` and
+`SKILLS.md`.
 
 Velocity-Mode safely loads regular UTF-8 files only and first matches skills
 deterministically from their ID, tags, and triggers. Tied candidates use a
