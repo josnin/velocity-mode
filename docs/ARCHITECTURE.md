@@ -38,6 +38,13 @@ flowchart LR
 Each request appends the user task to ordered history. Root-level `AGENTS.md`
 and `SKILLS.md` instructions are added to the system prompt when present,
 subject to size/encoding checks and an untrusted-instructions boundary.
+Workspace skill files under `.vmode/skills/*.md` are discovered separately.
+Their TOML metadata is filtered deterministically from the task; tied matches
+use a bounded, provider-independent JSON selector request. Selected files are
+snapshotted by ID, declared version, and SHA-256 hash for the active task and
+are appended to that task's user context. The system prompt and tool schema
+remain unchanged, so the stable provider prefix is preserved; catalog changes
+take effect on the next task.
 Explicit `@file` references are resolved and appended as context before the
 request. Assistant tool calls are validated and executed by the fixed
 registry; results retain role `tool` and their matching `tool_call_id`. The

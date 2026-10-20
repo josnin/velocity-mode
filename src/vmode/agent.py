@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 
 from .protocol import AgentEvent, AgentLimits, Message, ProviderError, ProviderEvent
 from .providers import Provider
+from .skills import SkillCatalog
 from .tools import ToolError, ToolRegistry, definitions
 
 
@@ -26,6 +27,7 @@ class Agent:
         self.request_count = 0
         self.tool_call_count = 0
         self._cancelled = False
+        self.skills = SkillCatalog(self.tools.root)
 
     def cancel(self) -> None:
         self._cancelled = True
@@ -47,6 +49,24 @@ class Agent:
         except ToolError as exc:
             yield AgentEvent("error", str(exc))
             return
+        try:
+            remaining = self.limits.timeout_seconds - (time.monotonic() - started)
+            if remaining <= 0:
+                raise TimeoutError
+            async with asyncio.timeout(remaining):
+                selected_skills = await self.skills.select(task, self.provider)
+        except TimeoutError:
+            yield AgentEvent("error", "Agent execution time limit reached.")
+            return
+        except ValueError as exc:
+            yield AgentEvent("error", str(exc))
+            return
+        if selected_skills.skills:
+            skill_ids = ", ".join(
+                f"{skill.identifier}@{skill.version}" for skill in selected_skills.skills
+            )
+            yield AgentEvent("activity", f"Selected skills ({selected_skills.source}): {skill_ids}")
+        request_task = selected_skills.append_to_task(request_task)
         self.history.append(Message("user", request_task))
         response_chars = 0
         run_tool_calls = 0

@@ -319,6 +319,32 @@ they cannot override approval requirements, workspace restrictions, available
 tools, or higher-priority safety rules. Review their contents as you would
 other repository instructions.
 
+## Selectable workspace skills
+
+Optional task-specific skills live in `.vmode/skills/*.md`. A skill uses TOML
+front matter followed by its guidance:
+
+```toml
++++
+id = "python-tests"
+version = "1.0.0"
+description = "Run and interpret the Python test suite."
+tags = ["python", "testing"]
+triggers = ["pytest", "test"]
++++
+Use the existing test helpers and run the focused suite first.
+```
+
+Velocity-Mode safely loads regular UTF-8 files only and first matches skills
+deterministically from their ID, tags, and triggers. Tied candidates use a
+validated provider-neutral JSON selection request; invalid selector output
+falls back to the tied deterministic candidates. Selected skill contents,
+declared versions, and content hashes are frozen for the entire task, then
+the catalog is reloaded for the next task. Skills are appended after the
+user task, preserving the stable system prompt and tool-schema prefix used by
+provider prefix caches. `SKILLS.md` remains general workspace guidance rather
+than a selectable skill.
+
 ## Tests and development
 
 ```sh
