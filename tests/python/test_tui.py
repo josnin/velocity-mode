@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from vmode.tui import _approval_preview
+from vmode.tui import _TranscriptItem, _UIState, _approval_preview, _register_response
 
 
 def test_edit_approval_preview_shows_targeted_diff(tmp_path: Path):
@@ -63,3 +63,18 @@ def test_write_approval_preview_never_reads_outside_workspace(tmp_path: Path):
     )
     assert "private content" not in symlink_preview
     assert "outside-workspace" in symlink_preview
+
+
+def test_incomplete_terminal_error_is_registered_as_a_selectable_response():
+    state = _UIState()
+    error = _TranscriptItem(
+        "assistant",
+        "Error: Provider returned malformed tool-call arguments.",
+        incomplete=True,
+    )
+
+    _register_response(state, error)
+
+    assert error.response_id == 0
+    assert state.selected_response == 0
+    assert state.responses[0].text == error.text

@@ -78,6 +78,16 @@ class _UIState:
     search_query: str = ""
 
 
+def _register_response(state: _UIState, item: _TranscriptItem) -> None:
+    if not item.text or item.response_id is not None:
+        return
+    item.response_id = state.next_response_id
+    state.next_response_id += 1
+    state.responses.append(_Response(item.response_id, item.text))
+    del state.responses[:-MAX_RESPONSES]
+    state.selected_response = len(state.responses) - 1
+
+
 class _TranscriptLexer(Lexer):
     def lex_document(self, document: Document):
         lines = document.lines
@@ -557,37 +567,33 @@ async def run_tui(
                         app.invalidate()
                     elif event.kind == "error":
                         assistant_item.incomplete = True
-                        state.items.append(_TranscriptItem("notice", f"Error: {event.text}"))
+                        if assistant_item.text:
+                            state.items.append(
+                                _TranscriptItem("notice", f"Error: {event.text}")
+                            )
+                        else:
+                            assistant_item.text = f"Error: {event.text}"
                         app.invalidate()
                     elif event.kind == "done":
                         state.activities.append("Turn complete")
-                        if assistant_item.text:
-                            assistant_item.response_id = state.next_response_id
-                            state.next_response_id += 1
-                            state.responses.append(
-                                _Response(assistant_item.response_id, assistant_item.text)
-                            )
-                            del state.responses[:-MAX_RESPONSES]
-                            state.selected_response = len(state.responses) - 1
+                        _register_response(state, assistant_item)
             except asyncio.CancelledError:
                 assistant_item.incomplete = bool(assistant_item.text)
                 state.activities.append("Task cancelled")
                 raise
             except Exception as exc:
                 assistant_item.incomplete = bool(assistant_item.text)
-                state.items.append(
-                    _TranscriptItem("notice", f"Agent failed: {exc}")
-                )
+                if assistant_item.text:
+                    state.items.append(
+                        _TranscriptItem("notice", f"Agent failed: {exc}")
+                    )
+                else:
+                    assistant_item.text = f"Agent failed: {exc}"
+                    assistant_item.incomplete = True
             finally:
                 if assistant_item.text and assistant_item.response_id is None:
                     assistant_item.incomplete = True
-                    assistant_item.response_id = state.next_response_id
-                    state.next_response_id += 1
-                    state.responses.append(
-                        _Response(assistant_item.response_id, assistant_item.text)
-                    )
-                    del state.responses[:-MAX_RESPONSES]
-                    state.selected_response = len(state.responses) - 1
+                _register_response(state, assistant_item)
                 state.busy = False
                 state.pending_approval = ""
                 state.approval_future = None
