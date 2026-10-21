@@ -124,7 +124,7 @@ def test_normal_motions_and_response_copy_in_terminal(tmp_path: Path):
         assert wait_for(b"SELECTED RESPONSE 1/2"), bytes(output)
         output.clear()
         os.write(fd, b"y")
-        assert wait_for(b"Yanked response 1."), bytes(output)
+        assert wait_for(b"Yanked response 1 to yank register."), bytes(output)
         match = re.search(rb"\x1b\]52;c;([A-Za-z0-9+/=]+)\x07", output)
         assert match is not None
         copied = base64.b64decode(match.group(1)).decode("utf-8")
@@ -134,7 +134,7 @@ def test_normal_motions_and_response_copy_in_terminal(tmp_path: Path):
         assert wait_for(b"SELECTED RESPONSE 2/2"), bytes(output)
         output.clear()
         os.write(fd, b"y")
-        assert wait_for(b"Yanked response 2."), bytes(output)
+        assert wait_for(b"Yanked response 2 to yank register."), bytes(output)
         match = re.search(rb"\x1b\]52;c;([A-Za-z0-9+/=]+)\x07", output)
         assert match is not None
         copied = base64.b64decode(match.group(1)).decode("utf-8")

@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import difflib
+import os
 import shlex
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -157,6 +160,37 @@ def _approval_preview(name: str, arguments: dict[str, Any], workspace: Path) -> 
     if preview_note:
         heading += preview_note + "\n"
     return heading + (diff or "(no content change)")
+
+
+def _copy_to_system_clipboard(text: str) -> bool:
+    commands: list[list[str]] = []
+    if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-copy"):
+        commands.append(["wl-copy"])
+    if os.environ.get("DISPLAY"):
+        if shutil.which("xclip"):
+            commands.append(["xclip", "-selection", "clipboard"])
+        if shutil.which("xsel"):
+            commands.append(["xsel", "--clipboard", "--input"])
+    if sys.platform == "darwin" and shutil.which("pbcopy"):
+        commands.append(["pbcopy"])
+    if os.name == "nt" and shutil.which("clip.exe"):
+        commands.append(["clip.exe"])
+    for command in commands:
+        try:
+            result = subprocess.run(
+                command,
+                input=text,
+                text=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=1,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if result.returncode == 0:
+            return True
+    return False
 
 
 async def run_tui(
@@ -472,23 +506,24 @@ async def run_tui(
         if add_to_register:
             entries.append(yank_text)
         text = "\n\n".join(entries)
-        payload = base64.b64encode(text.encode("utf-8")).decode("ascii")
-        if len(payload) > 140_000:
-            add_notice("Yank register exceeds the terminal clipboard size limit.")
-            return
-        if not sys.stdout.isatty():
-            add_notice("Clipboard copy requires a terminal with OSC 52 support.")
-            return
         if add_to_register:
             state.yank_entries.append(yank_text)
         if is_new_response:
             state.yanked_responses[response.identifier] = response.text
-        app.output.write_raw(f"\x1b]52;c;{payload}\x07")
-        app.output.flush()
+        copied_to_desktop = _copy_to_system_clipboard(text)
+        if not copied_to_desktop and sys.stdout.isatty():
+            payload = base64.b64encode(text.encode("utf-8")).decode("ascii")
+            if len(payload) <= 140_000:
+                app.output.write_raw(f"\x1b]52;c;{payload}\x07")
+                app.output.flush()
         if selected_text is None:
-            add_notice(f"Yanked response {index + 1}.")
+            target = "system clipboard" if copied_to_desktop else "yank register"
+            add_notice(f"Yanked response {index + 1} to {target}.")
         else:
-            add_notice(f"Yanked visual selection ({len(selected_text)} characters).")
+            target = "system clipboard" if copied_to_desktop else "yank register"
+            add_notice(
+                f"Yanked visual selection ({len(selected_text)} characters) to {target}."
+            )
 
     def open_transcript(app: Application) -> None:
         if not state.items:
