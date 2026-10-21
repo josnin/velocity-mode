@@ -241,13 +241,54 @@ async def test_git_stage_preserves_baseline_changes_and_commits_verified_paths(
     registry = ToolRegistry(tmp_path, approve=approve)
     await registry.begin_task()
     await registry.invoke("write_file", {"path": "task.txt", "content": "task work\n"})
-    with pytest.raises(ToolError, match="baseline user changes"):
+    with pytest.raises(ToolError, match="not modified by VMode"):
         await registry.invoke("git_stage", {"paths": ["user.txt"]})
     staged = _result_content(await registry.invoke("git_stage", {"paths": ["task.txt"]}))
     assert "task.txt" in staged["staged_paths"]
     with pytest.raises(ToolError, match="differ from VMode-verified"):
         await registry.invoke("git_commit", {"message": "feat: add task"})
     assert (tmp_path / "notes.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_git_stage_allows_approved_vmode_edits_to_baseline_files(
+    tmp_path: Path,
+):
+    _git_repository(tmp_path)
+    readme = tmp_path / "README.md"
+    readme.write_text("original\n", encoding="utf-8")
+    _git(tmp_path, "add", "--", "README.md")
+    _git(tmp_path, "commit", "-m", "add readme")
+    readme.write_text("baseline user change\n", encoding="utf-8")
+    approval_arguments = []
+
+    async def approve(name, arguments):
+        approval_arguments.append((name, arguments))
+        return True
+
+    registry = ToolRegistry(tmp_path, approve=approve)
+    await registry.begin_task()
+    await registry.invoke(
+        "edit_file",
+        {
+            "path": "README.md",
+            "old_text": "baseline user change",
+            "new_text": "baseline user change\nVMode change",
+        },
+    )
+
+    staged = _result_content(
+        await registry.invoke("git_stage", {"paths": ["README.md"]})
+    )
+
+    assert staged["staged_paths"] == ["README.md"]
+    assert approval_arguments[-1] == (
+        "git_stage",
+        {"paths": ["README.md"], "baseline_paths": ["README.md"]},
+    )
+    diff = _git(tmp_path, "diff", "--cached", "--", "README.md").stdout
+    assert "+baseline user change" in diff
+    assert "+VMode change" in diff
 
 
 @pytest.mark.asyncio

@@ -687,8 +687,7 @@ class ToolRegistry:
         if self._git_baseline is None:
             return
         relative = path.relative_to(self.root).as_posix()
-        if relative not in self._git_baseline:
-            self._git_task_contents[relative] = content
+        self._git_task_contents[relative] = content
 
     async def _git_stage(
         self, paths: list[str], arguments: dict[str, Any]
@@ -700,7 +699,9 @@ class ToolRegistry:
         status = await self._git_status()
         current = {entry["path"]: entry for entry in status["entries"]}
         self._validate_git_stage_paths(paths, current)
-        if not await self._approval("git_stage", arguments):
+        baseline_paths = sorted(set(paths).intersection(self._git_baseline))
+        approval_arguments = {**arguments, "baseline_paths": baseline_paths}
+        if not await self._approval("git_stage", approval_arguments):
             return ToolResult("Operation denied by user.", approved=False)
         status = await self._git_status()
         current = {entry["path"]: entry for entry in status["entries"]}
@@ -732,8 +733,6 @@ class ToolRegistry:
         self, paths: list[str], current: dict[str, dict[str, Any]]
     ) -> None:
         for path in paths:
-            if path in self._git_baseline:
-                raise ToolError(f"{path} had baseline user changes and will not be staged")
             if path not in self._git_task_contents:
                 raise ToolError(f"{path} was not modified by VMode in this task")
             entry = current.get(path)

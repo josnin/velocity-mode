@@ -23,7 +23,11 @@ def test_edit_approval_preview_shows_targeted_diff(tmp_path: Path):
 
 
 def test_git_approval_previews_show_paths_and_message(tmp_path: Path):
-    stage_preview = _approval_preview("git_stage", {"paths": ["src/main.py"]}, tmp_path)
+    stage_preview = _approval_preview(
+        "git_stage",
+        {"paths": ["src/main.py"], "baseline_paths": ["src/main.py"]},
+        tmp_path,
+    )
     commit_preview = _approval_preview(
         "git_commit",
         {"paths": ["src/main.py"], "message": "feat: add main"},
@@ -32,6 +36,7 @@ def test_git_approval_previews_show_paths_and_message(tmp_path: Path):
 
     assert "Approve Git staging" in stage_preview
     assert "src/main.py" in stage_preview
+    assert "all current hunks" in stage_preview
     assert "Approve Git commit" in commit_preview
     assert "feat: add main" in commit_preview
 

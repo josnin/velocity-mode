@@ -103,9 +103,17 @@ def _approval_preview(name: str, arguments: dict[str, Any], workspace: Path) -> 
     if name == "run_command":
         return "Command argv: " + repr(arguments.get("argv", []))
     if name == "git_stage":
-        return "Approve Git staging for:\n" + "\n".join(
+        preview = "Approve Git staging for:\n" + "\n".join(
             str(path) for path in arguments.get("paths", [])
         )
+        baseline_paths = arguments.get("baseline_paths", [])
+        if baseline_paths:
+            preview += (
+                "\n\nWarning: these files had changes before this task. "
+                "Staging them includes all current hunks:\n"
+                + "\n".join(str(path) for path in baseline_paths)
+            )
+        return preview
     if name == "git_commit":
         return (
             "Approve Git commit for:\n"
