@@ -29,6 +29,13 @@ def test_tool_capable_prompt_directs_workspace_study_without_user_file_selection
     assert "Do not ask the user to name a file or directory" in prompt
 
 
+def test_tool_capable_prompt_rejects_textual_pseudo_calls(tmp_path: Path):
+    prompt = build_system_prompt(MockProvider(scenario="read-file"), tmp_path)
+
+    assert "never represent a tool call in prose, Markdown, or code" in prompt
+    assert "Do not claim a file was changed unless the matching write tool result confirms it" in prompt
+
+
 def test_workspace_instruction_symlinks_and_invalid_utf8_are_rejected(tmp_path: Path):
     outside = tmp_path.parent / "outside-instructions.md"
     outside.write_text("external", encoding="utf-8")
