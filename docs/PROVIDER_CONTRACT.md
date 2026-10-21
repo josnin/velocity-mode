@@ -76,6 +76,8 @@ It reads `GEMINI_API_KEY` at runtime and defaults tool calling on, while
 retaining the shared adapter's validation, redaction, retry, and HTTP safety
 rules. Gemini model availability, free-tier quotas, and function-calling
 support vary by model and account; offline tests only verify the documented
-request and streaming protocol.
+request and streaming protocol. Opaque tool-call extension fields, including
+Gemini thought signatures, are retained in assistant history and returned
+unchanged with the next tool-result request.
 
 Official reference: [Gemini API OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai).

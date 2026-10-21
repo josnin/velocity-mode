@@ -257,13 +257,25 @@ async def test_assistant_tool_messages_serialize_openai_tool_result_shape():
     assistant = Message(
         "assistant",
         "checking",
-        tool_calls=[ToolCall("call-1", "read_file", {"path": "a.py"})],
+        tool_calls=[
+            ToolCall(
+                "call-1",
+                "read_file",
+                {"path": "a.py"},
+                {"thought_signature": "top-level-signature"},
+                {"thought_signature": "function-signature"},
+            )
+        ],
     )
     tool = Message("tool", "contents", tool_call_id="call-1", name="read_file")
     assert assistant.as_api_message()["tool_calls"][0]["function"] == {
+        "thought_signature": "function-signature",
         "name": "read_file",
         "arguments": '{"path": "a.py"}',
     }
+    assert assistant.as_api_message()["tool_calls"][0]["thought_signature"] == (
+        "top-level-signature"
+    )
     assert tool.as_api_message() == {
         "role": "tool",
         "tool_call_id": "call-1",

@@ -34,7 +34,13 @@ def _serialize_message(message: Message) -> dict[str, Any]:
         "tool_call_id": message.tool_call_id,
         "name": message.name,
         "tool_calls": [
-            {"id": call.id, "name": call.name, "arguments": call.arguments}
+            {
+                "id": call.id,
+                "name": call.name,
+                "arguments": call.arguments,
+                "extra": call.extra,
+                "function_extra": call.function_extra,
+            }
             for call in message.tool_calls
         ],
     }
@@ -55,9 +61,17 @@ def _deserialize_message(value: Any) -> Message:
         if not isinstance(raw, dict):
             raise ValueError("Session contains an invalid tool call.")
         call_id, name, arguments = raw.get("id"), raw.get("name"), raw.get("arguments")
-        if not isinstance(call_id, str) or not isinstance(name, str) or not isinstance(arguments, dict):
+        extra = raw.get("extra", {})
+        function_extra = raw.get("function_extra", {})
+        if (
+            not isinstance(call_id, str)
+            or not isinstance(name, str)
+            or not isinstance(arguments, dict)
+            or not isinstance(extra, dict)
+            or not isinstance(function_extra, dict)
+        ):
             raise ValueError("Session contains an invalid tool call.")
-        calls.append(ToolCall(call_id, name, arguments))
+        calls.append(ToolCall(call_id, name, arguments, extra, function_extra))
     tool_call_id = value.get("tool_call_id")
     name = value.get("name")
     if tool_call_id is not None and not isinstance(tool_call_id, str):

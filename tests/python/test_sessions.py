@@ -18,7 +18,15 @@ def test_session_round_trip_preserves_tool_messages_and_private_permissions(tmp_
         Message(
             "assistant",
             "",
-            [ToolCall("call-1", "read_file", {"path": "main.py"})],
+            [
+                ToolCall(
+                    "call-1",
+                    "read_file",
+                    {"path": "main.py"},
+                    {"thought_signature": "top-level-signature"},
+                    {"thought_signature": "function-signature"},
+                )
+            ],
         ),
         Message("tool", "source", tool_call_id="call-1", name="read_file"),
     ]
@@ -38,6 +46,12 @@ def test_session_round_trip_preserves_tool_messages_and_private_permissions(tmp_
         "tool",
     ]
     assert loaded["messages"][1].tool_calls[0].arguments == {"path": "main.py"}
+    assert loaded["messages"][1].tool_calls[0].extra == {
+        "thought_signature": "top-level-signature"
+    }
+    assert loaded["messages"][1].tool_calls[0].function_extra == {
+        "thought_signature": "function-signature"
+    }
     assert loaded["messages"][2].tool_call_id == "call-1"
     assert loaded["ui"] == {"items": []}
     assert loaded["tool_calling"] is True

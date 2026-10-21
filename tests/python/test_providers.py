@@ -515,6 +515,64 @@ async def test_gemini_normalizes_stop_finish_reason_for_tool_calls():
 
 
 @pytest.mark.asyncio
+async def test_gemini_preserves_tool_call_extensions_for_follow_up_requests():
+    requests = []
+    tool_call_frame = {
+        "choices": [
+            {
+                "delta": {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call-1",
+                            "thought_signature": "top-level-signature",
+                            "function": {
+                                "name": "read_file",
+                                "arguments": '{"path":"README.md"}',
+                                "thought_signature": "function-signature",
+                            },
+                        }
+                    ]
+                },
+                "finish_reason": "stop",
+            }
+        ]
+    }
+    final_frame = {"choices": [{"delta": {}, "finish_reason": "stop"}]}
+
+    async def handler(request):
+        requests.append(json.loads(request.content))
+        frame = tool_call_frame if len(requests) == 1 else final_frame
+        data = b"data: " + json.dumps(frame).encode() + b"\n\ndata: [DONE]\n\n"
+        return httpx.Response(200, stream=ByteStream([data]))
+
+    provider = GeminiProvider(
+        "gemini-3.8-flash",
+        token="gemini-fake-key",
+        transport=httpx.MockTransport(handler),
+    )
+    history = [Message("user", "read README.md")]
+    events = [event async for event in provider.stream(history, [])]
+    history.extend(
+        [
+            Message("assistant", tool_calls=events[-1].tool_calls),
+            Message(
+                "tool",
+                "README contents",
+                tool_call_id="call-1",
+                name="read_file",
+            ),
+        ]
+    )
+    async for _ in provider.stream(history, []):
+        pass
+
+    tool_call = requests[1]["messages"][1]["tool_calls"][0]
+    assert tool_call["thought_signature"] == "top-level-signature"
+    assert tool_call["function"]["thought_signature"] == "function-signature"
+
+
+@pytest.mark.asyncio
 async def test_gemini_requires_dedicated_api_key():
     provider = GeminiProvider("gemini-3.8-flash", token="")
 

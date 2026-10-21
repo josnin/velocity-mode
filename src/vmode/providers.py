@@ -318,7 +318,14 @@ class OpenAICompatibleProvider:
                                 if index not in tool_deltas and len(tool_deltas) >= 8:
                                     raise ProviderError("Model returned too many tool calls.")
                                 current = tool_deltas.setdefault(
-                                    index, {"id": "", "name": "", "arguments": ""}
+                                    index,
+                                    {
+                                        "id": "",
+                                        "name": "",
+                                        "arguments": "",
+                                        "extra": {},
+                                        "function_extra": {},
+                                    },
                                 )
                                 if part.get("id"):
                                     if not isinstance(part["id"], str):
@@ -326,6 +333,13 @@ class OpenAICompatibleProvider:
                                             f"Malformed tool-call ID from {self.provider_label}."
                                         )
                                     current["id"] = part["id"]
+                                current["extra"].update(
+                                    {
+                                        key: value
+                                        for key, value in part.items()
+                                        if key not in {"index", "id", "type", "function"}
+                                    }
+                                )
                                 function = part.get("function", {})
                                 if not isinstance(function, dict):
                                     raise ProviderError(
@@ -339,6 +353,13 @@ class OpenAICompatibleProvider:
                                     )
                                 current["name"] += name_delta
                                 current["arguments"] += argument_delta
+                                current["function_extra"].update(
+                                    {
+                                        key: value
+                                        for key, value in function.items()
+                                        if key not in {"name", "arguments"}
+                                    }
+                                )
                                 if len(current["arguments"]) > 250_000:
                                     raise ProviderError("Model tool-call arguments exceed the size limit.")
                             choice_finish = choice.get("finish_reason")
@@ -377,7 +398,15 @@ class OpenAICompatibleProvider:
                 ) from exc
             if not isinstance(args, dict):
                 raise ProviderError("Model tool-call arguments must be a JSON object.")
-            calls.append(ToolCall(item["id"], item["name"], args))
+            calls.append(
+                ToolCall(
+                    item["id"],
+                    item["name"],
+                    args,
+                    item["extra"],
+                    item["function_extra"],
+                )
+            )
         if calls and not self.capabilities.tool_calling:
             raise ProviderError(
                 "The model returned tool calls, but tool calling is not enabled for this provider configuration."

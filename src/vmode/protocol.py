@@ -12,6 +12,8 @@ class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
+    extra: dict[str, Any] = field(default_factory=dict)
+    function_extra: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -29,9 +31,11 @@ class Message:
                 "content": self.content or None,
                 "tool_calls": [
                     {
+                        **call.extra,
                         "id": call.id,
                         "type": "function",
                         "function": {
+                            **call.function_extra,
                             "name": call.name,
                             "arguments": json.dumps(call.arguments),
                         },
