@@ -5,7 +5,8 @@ Author: Velocity-Mode
 Velocity-Mode (`vmode`) is a Python 3.11+ coding-agent CLI with a Vim-inspired
 terminal editor. It streams model responses and supports bounded tool calls.
 It includes Hugging Face and generic OpenAI Chat Completions-compatible
-providers, plus a deterministic mock for offline development and tests.
+providers, Google Gemini Developer API support, and a deterministic mock for
+offline development and tests.
 
 ## Install
 
@@ -203,6 +204,26 @@ max_output_tokens = 4096
 tool_calling = false
 ```
 
+## Google Gemini
+
+Velocity-Mode supports the Google Gemini Developer API through its official
+OpenAI-compatible streaming endpoint. Create an API key in
+[Google AI Studio](https://aistudio.google.com/apikey), export it for the
+current shell, and select an available Gemini model:
+
+```sh
+export GEMINI_API_KEY="your_gemini_api_key"
+vmode --provider gemini --model "gemini-2.5-flash"
+```
+
+The default endpoint is
+`https://generativelanguage.googleapis.com/v1beta/openai`; override it only
+with a documented compatible HTTPS endpoint. Tool calling is enabled by
+default for Gemini and can be disabled with `--no-tool-calling`. Model
+availability, free-tier quotas, rate limits, tool support, and billing are
+controlled by Google and can change; select a model and account configuration
+that currently qualifies for the free tier.
+
 ## Ollama
 
 Velocity-Mode can call a local or remote Ollama server through its
@@ -272,13 +293,15 @@ findings in focused sections.
 Supported environment overrides are `VMODE_PROVIDER`, `VMODE_MODEL`,
 `VMODE_BASE_URL`, `VMODE_TIMEOUT`, `VMODE_MAX_OUTPUT_TOKENS`,
 `VMODE_TOOL_CALLING`, and `VMODE_CONFIG`. Hugging Face uses `HF_TOKEN`;
-OpenAI-compatible endpoints use `VMODE_API_KEY`. Credentials are only read
-from the environment at runtime. Tool calling defaults on for Hugging Face,
-off for Ollama, OpenAI-compatible endpoints, and the default mock, and on for the mock
+Google Gemini uses `GEMINI_API_KEY`; OpenAI-compatible endpoints use
+`VMODE_API_KEY`. Credentials are only read from the environment at runtime.
+Tool calling defaults on for Gemini and Hugging Face, off for Ollama,
+OpenAI-compatible endpoints, and the default mock, and on for the mock
 `read-file` scenario.
 Disable it with `--no-tool-calling`, `VMODE_TOOL_CALLING=false`, or `tool_calling = false` if the selected
 model/provider does not support tools.
-`HF_TOKEN` is read at runtime and is never accepted in TOML or CLI arguments.
+`HF_TOKEN`, `GEMINI_API_KEY`, and `VMODE_API_KEY` are read at runtime and are
+never accepted in TOML or CLI arguments.
 The token is sent only as an HTTPS Bearer authorization header. Redirects are
 disabled, TLS verification remains enabled, and authorization headers are not
 logged. Do not place credentials in project files or commit them.

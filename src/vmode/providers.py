@@ -434,6 +434,34 @@ class HuggingFaceProvider(OpenAICompatibleProvider):
             raise ProviderError(message) from exc
 
 
+class GeminiProvider(OpenAICompatibleProvider):
+    """Streaming Google Gemini Developer API OpenAI-compatible endpoint."""
+
+    name = "gemini"
+
+    def __init__(
+        self,
+        model: str,
+        base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai",
+        timeout: float = 60.0,
+        max_output_tokens: int = 4096,
+        supports_tool_calling: bool = True,
+        token: str | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
+        super().__init__(
+            model,
+            base_url,
+            timeout,
+            max_output_tokens,
+            supports_tool_calling,
+            token,
+            transport,
+            token_env="GEMINI_API_KEY",
+            provider_label="Google Gemini Developer API",
+        )
+
+
 class OllamaProvider(OpenAICompatibleProvider):
     """Streaming Ollama OpenAI-compatible endpoint."""
 

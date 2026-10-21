@@ -66,3 +66,16 @@ and does not claim live compatibility with every endpoint.
 Official references: [Inference Providers](https://huggingface.co/docs/inference-providers/en/index),
 [Responses API](https://huggingface.co/docs/inference-providers/guides/responses-api),
 and [Hugging Face tokens](https://huggingface.co/docs/hub/main/security-tokens).
+
+## Google Gemini
+
+`GeminiProvider` uses Google's documented OpenAI-compatible streaming Chat
+Completions endpoint,
+`https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`.
+It reads `GEMINI_API_KEY` at runtime and defaults tool calling on, while
+retaining the shared adapter's validation, redaction, retry, and HTTP safety
+rules. Gemini model availability, free-tier quotas, and function-calling
+support vary by model and account; offline tests only verify the documented
+request and streaming protocol.
+
+Official reference: [Gemini API OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai).

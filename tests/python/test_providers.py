@@ -6,6 +6,7 @@ import pytest
 
 from vmode.protocol import Message, ProviderError, ToolCall
 from vmode.providers import (
+    GeminiProvider,
     HuggingFaceProvider,
     OllamaProvider,
     OpenAICompatibleProvider,
@@ -446,6 +447,52 @@ async def test_openai_compatible_provider_requires_explicit_key_and_tool_capabil
     )
     with pytest.raises(ProviderError, match="tool calling is not enabled"):
         async for _ in provider.stream([Message("user", "read file")], []):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_gemini_uses_developer_api_with_dedicated_key_and_tool_calling():
+    captured = {}
+    data = (
+        b'data: {"choices":[{"delta":{"content":"gemini"},"finish_reason":"stop"}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+
+    async def handler(request):
+        captured["url"] = str(request.url)
+        captured["authorization"] = request.headers.get("authorization")
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, stream=ByteStream([data]))
+
+    provider = GeminiProvider(
+        "gemini-2.5-flash",
+        token="gemini-fake-key",
+        transport=httpx.MockTransport(handler),
+    )
+    events = [
+        event
+        async for event in provider.stream(
+            [Message("user", "hello")],
+            [{"type": "function", "function": {"name": "read_file"}}],
+        )
+    ]
+
+    assert provider.name == "gemini"
+    assert provider.capabilities.tool_calling
+    assert captured["url"] == (
+        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+    )
+    assert captured["authorization"] == "Bearer gemini-fake-key"
+    assert "tools" in captured["body"]
+    assert "".join(event.text for event in events if event.kind == "text") == "gemini"
+
+
+@pytest.mark.asyncio
+async def test_gemini_requires_dedicated_api_key():
+    provider = GeminiProvider("gemini-2.5-flash", token="")
+
+    with pytest.raises(ProviderError, match="GEMINI_API_KEY"):
+        async for _ in provider.stream([Message("user", "hello")], []):
             pass
 
 

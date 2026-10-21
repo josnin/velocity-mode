@@ -89,13 +89,16 @@ def test_legacy_default_config_is_used_when_new_config_is_missing(tmp_path, monk
     assert load_settings(args).model == "legacy-config-model"
 
 
-def test_huggingface_tool_calling_defaults_on_and_can_be_disabled(tmp_path, monkeypatch):
+@pytest.mark.parametrize("provider", ("gemini", "huggingface"))
+def test_tool_capable_provider_defaults_on_and_can_be_disabled(
+    tmp_path, monkeypatch, provider
+):
     monkeypatch.delenv("VMODE_PROVIDER", raising=False)
     monkeypatch.delenv("VMODE_TOOL_CALLING", raising=False)
     args = Namespace(
         config=str(tmp_path / "missing.toml"),
-        provider="huggingface",
-        model="microsoft/Phi-3-mini-4k-instruct:featherless-ai",
+        provider=provider,
+        model="gemini-2.5-flash",
         base_url=None,
         timeout=None,
         max_iterations=None,
@@ -106,6 +109,27 @@ def test_huggingface_tool_calling_defaults_on_and_can_be_disabled(tmp_path, monk
     assert load_settings(args).tool_calling
     args.tool_calling = False
     assert not load_settings(args).tool_calling
+
+
+def test_gemini_provider_uses_developer_api_defaults(tmp_path, monkeypatch):
+    monkeypatch.delenv("VMODE_PROVIDER", raising=False)
+    monkeypatch.delenv("VMODE_TOOL_CALLING", raising=False)
+    args = make_parser().parse_args(
+        [
+            "--provider",
+            "gemini",
+            "--model",
+            "gemini-2.5-flash",
+            "--workspace",
+            str(tmp_path),
+        ]
+    )
+    settings = load_settings(args)
+    provider = make_provider(settings, args)
+
+    assert provider.name == "gemini"
+    assert provider.base_url == "https://generativelanguage.googleapis.com/v1beta/openai"
+    assert provider.capabilities.tool_calling
 
 
 def test_resumed_huggingface_session_restores_tool_calling_default(tmp_path, monkeypatch):

@@ -48,7 +48,7 @@ def load_settings(args: object) -> Settings:
         or provider.get("name", "mock")
     )
     file_tool_calling = provider.get(
-        "tool_calling", selected_provider == "huggingface"
+        "tool_calling", selected_provider in {"gemini", "huggingface"}
     )
     if type(file_tool_calling) is not bool:
         raise ValueError("provider.tool_calling must be true or false")

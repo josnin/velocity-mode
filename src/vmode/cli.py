@@ -17,6 +17,7 @@ from .config import Settings, load_settings
 from .instructions import build_system_prompt
 from .protocol import AgentLimits
 from .providers import (
+    GeminiProvider,
     HuggingFaceProvider,
     MockProvider,
     OllamaProvider,
@@ -96,7 +97,8 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("prompt", nargs="?", help="initial task or prompt")
     parser.add_argument("--version", action="version", version=f"vmode {__version__}")
     parser.add_argument(
-        "--provider", choices=("mock", "huggingface", "ollama", "openai-compatible")
+        "--provider",
+        choices=("mock", "gemini", "huggingface", "ollama", "openai-compatible"),
     )
     parser.add_argument("--model")
     parser.add_argument("--base-url")
@@ -172,6 +174,19 @@ def make_provider(settings: Settings, args: argparse.Namespace) -> Provider:
         return HuggingFaceProvider(
             settings.model,
             settings.base_url or "https://router.huggingface.co/v1",
+            settings.timeout,
+            settings.max_output_tokens,
+            supports_tool_calling=settings.tool_calling,
+        )
+    if settings.provider == "gemini":
+        if settings.model == "mock/deterministic":
+            raise ValueError(
+                "Google Gemini requires a model ID; set --model or VMODE_MODEL"
+            )
+        return GeminiProvider(
+            settings.model,
+            settings.base_url
+            or "https://generativelanguage.googleapis.com/v1beta/openai",
             settings.timeout,
             settings.max_output_tokens,
             supports_tool_calling=settings.tool_calling,
