@@ -1,5 +1,7 @@
 # Velocity-Mode
 
+Author: Velocity-Mode
+
 Velocity-Mode (`vmode`) is a Python 3.11+ coding-agent CLI with a Vim-inspired
 terminal editor. It streams model responses and supports bounded tool calls.
 It includes Hugging Face and generic OpenAI Chat Completions-compatible
@@ -95,13 +97,15 @@ potentially sensitive, and delete sessions you no longer need.
 
 ## Hugging Face
 
+<!-- VMode update -->
+
 Create a fine-grained Hugging Face access token with permission to call
 [Inference Providers](https://huggingface.co/docs/inference-providers/en/index),
 then export it for the current shell:
 
 ```sh
 export HF_TOKEN="your_hugging_face_token"
-vmode --provider huggingface --model "openai/gpt-oss-120b:featherless-ai"
+vmode --provider huggingface --model "openai/gpt-oss-120b:cheapest"
 ```
 
 For one-shot use:
@@ -139,7 +143,7 @@ than relying on `:cheapest`. For example, Hugging Face currently lists
 
 ```sh
 vmode --exec --provider huggingface \
-  --model "microsoft/Phi-3-mini-4k-instruct:featherless-ai" \
+  --model "microsoft/Phi-3-mini-4k-instruct:cheapest" \
   "Reply with OK"
 ```
 
