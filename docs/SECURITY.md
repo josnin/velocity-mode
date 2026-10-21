@@ -49,8 +49,7 @@ system sandbox.
 - Workspace discovery and content search invoke `rg` directly with fixed
   arguments and a workspace working directory; model input is never treated
   as a command-line flag or path. Ripgrep configuration files are disabled for
-  that invocation. The Python fallback does not spawn a subprocess. Neither
-  mechanism is an OS-level sandbox.
+  that invocation. This mechanism is not an OS-level sandbox.
 - Agent iterations, elapsed time, response size, command duration, and tool
   output are bounded. Tool output is passed back as a structured tool result.
 - The agent is not a sandbox; malicious or incorrect model output remains

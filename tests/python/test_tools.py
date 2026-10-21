@@ -1,13 +1,10 @@
 import json
-import shutil
 import sys
 from pathlib import Path
 
 import pytest
 
 from vmode.tools import ToolError, ToolRegistry, definitions
-
-RG_AVAILABLE = shutil.which("rg") is not None
 
 
 def _result_content(result):
@@ -27,7 +24,6 @@ async def test_file_tools_are_workspace_limited_and_search_files(tmp_path: Path)
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(not RG_AVAILABLE, reason="ripgrep is not installed")
 async def test_ripgrep_search_supports_regex_smart_case_and_literals(tmp_path: Path):
     (tmp_path / "nested").mkdir()
     (tmp_path / "nested" / "search file [1].txt").write_text(
@@ -73,7 +69,7 @@ async def test_file_discovery_includes_hidden_and_respects_ignore_policy(tmp_pat
 
     result = _result_content(await ToolRegistry(tmp_path).invoke("list_files", {}))
 
-    assert result["backend"] in {"rg", "python"}
+    assert result["backend"] == "rg"
     assert "nested/.hidden.py" in result["paths"]
     assert "nested/kept.txt" in result["paths"]
     assert "ignored/skip.txt" not in result["paths"]
@@ -92,32 +88,19 @@ async def test_search_distinguishes_no_matches_and_invalid_regex(tmp_path: Path)
     )
     assert no_matches["matches"] == []
     assert not no_matches["truncated"]
-    assert no_matches["backend"] in {"rg", "python"}
+    assert no_matches["backend"] == "rg"
     with pytest.raises(ToolError, match="invalid search regex"):
         await registry.invoke("search_files", {"query": "["})
 
 
 @pytest.mark.asyncio
-async def test_missing_ripgrep_uses_conservative_python_fallback(tmp_path: Path):
-    (tmp_path / ".gitignore").write_text("ignored/\n", encoding="utf-8")
-    (tmp_path / "nested").mkdir()
-    (tmp_path / "nested" / ".hidden.txt").write_text("Needle\n", encoding="utf-8")
-    (tmp_path / "ignored").mkdir()
-    (tmp_path / "ignored" / "skip.txt").write_text("Needle\n", encoding="utf-8")
+async def test_missing_ripgrep_is_reported_explicitly(tmp_path: Path):
     registry = ToolRegistry(tmp_path, rg_executable="missing-rg")
 
-    listed = _result_content(await registry.invoke("list_files", {}))
-    searched = _result_content(await registry.invoke("search_files", {"query": "needle"}))
-
-    assert listed["backend"] == searched["backend"] == "python"
-    assert listed["fallback_reason"] == searched["fallback_reason"] == "ripgrep unavailable"
-    assert "nested/.hidden.txt" in listed["paths"]
-    assert "ignored/skip.txt" not in listed["paths"]
-    assert searched["matches"] == [
-        {"path": "nested/.hidden.txt", "line": 1, "text": "Needle"}
-    ]
-    with pytest.raises(ToolError, match="invalid search regex"):
-        await registry.invoke("search_files", {"query": "["})
+    with pytest.raises(ToolError, match=r"ripgrep \(rg\) is required"):
+        await registry.invoke("list_files", {})
+    with pytest.raises(ToolError, match=r"ripgrep \(rg\) is required"):
+        await registry.invoke("search_files", {"query": "needle"})
 
 
 @pytest.mark.asyncio
@@ -166,10 +149,6 @@ async def test_ripgrep_timeout_and_model_arguments_cannot_inject_flags(
         await ToolRegistry(tmp_path).invoke(
             "search_files", {"query": "needle", "literal": "true"}
         )
-    with pytest.raises(ToolError, match="Python fallback search timed out"):
-        await ToolRegistry(
-            tmp_path, rg_executable="missing-rg", search_timeout=0
-        ).invoke("search_files", {"query": "needle"})
 
 
 @pytest.mark.asyncio

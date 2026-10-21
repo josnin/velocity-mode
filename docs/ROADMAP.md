@@ -30,6 +30,9 @@
   features by model.
 - Add broader `.gitignore` semantics and stronger OS-level process isolation
   only when the platform support and threat model are defined.
+- Evaluate a distributable package built with PyInstaller and protected with
+  PyArmor, including licensing, platform support, reproducibility, and user
+  installation/update behavior.
 - Consider persistent conversation history and richer usage display after
   defining storage, privacy, and retention behavior.
 - Implement Responses API support only as an independent adapter with its own

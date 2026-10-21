@@ -17,6 +17,10 @@ if ! "$PYTHON" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'; th
   echo "install.sh: Python 3.11 or newer is required." >&2
   exit 1
 fi
+if ! command -v rg >/dev/null 2>&1; then
+  echo "install.sh: ripgrep (rg) is required. Install it and ensure it is on PATH." >&2
+  exit 1
+fi
 
 DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
 case "$DATA_HOME" in

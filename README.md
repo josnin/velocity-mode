@@ -44,9 +44,9 @@ returns a deterministic response; it never accesses files or processes.
 
 ## Workspace search
 
-The `list_files` and `search_files` agent tools prefer
-[ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) when it is available
-on `PATH`; it is optional and is not installed as a Python dependency.
+The `list_files` and `search_files` agent tools require
+[ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) on `PATH`. It is an
+external runtime requirement, not a Python dependency.
 Ripgrep provides regex searching with smart-case matching, literal matching
 when requested by the agent, paths, and line numbers. To install it without
 elevated privileges, use a user-level package manager or Cargo:
@@ -56,17 +56,15 @@ cargo install ripgrep
 ```
 
 Ensure Cargo's user bin directory (normally `~/.cargo/bin`) is on `PATH`.
-Without `rg`, Velocity-Mode uses a bounded Python fallback and labels its tool
-results accordingly. The fallback handles ordinary root `.gitignore` patterns
-conservatively, but does not re-include files from negated or other complex
-Git ignore rules; install `rg` for full Git ignore behavior.
+Velocity-Mode reports an explicit error when `rg` is unavailable; install it
+before using workspace discovery or search.
 
-Both implementations search only the active workspace, do not follow
-symlinks, include hidden files unless ignored, and honor ignore rules. They
-always exclude `.git`, VCS metadata, dependency directories, virtual
-environments, caches, and common build outputs. Search results are compact
-JSON containing paths, line numbers, text, backend, and a `truncated` marker;
-they are bounded before being passed back to the model.
+Searches only inspect the active workspace, do not follow symlinks, include
+hidden files unless ignored, and honor ignore rules. They always exclude
+`.git`, VCS metadata, dependency directories, virtual environments, caches,
+and common build outputs. Search results are compact JSON containing paths,
+line numbers, text, backend, and a `truncated` marker; they are bounded before
+being passed back to the model.
 
 ## Install from source
 
