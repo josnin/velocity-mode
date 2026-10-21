@@ -98,7 +98,7 @@ def test_tool_capable_provider_defaults_on_and_can_be_disabled(
     args = Namespace(
         config=str(tmp_path / "missing.toml"),
         provider=provider,
-        model="gemini-2.5-flash",
+        model="gemini-3.8-flash",
         base_url=None,
         timeout=None,
         max_iterations=None,
@@ -119,7 +119,7 @@ def test_gemini_provider_uses_developer_api_defaults(tmp_path, monkeypatch):
             "--provider",
             "gemini",
             "--model",
-            "gemini-2.5-flash",
+            "gemini-3.8-flash",
             "--workspace",
             str(tmp_path),
         ]

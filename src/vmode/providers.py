@@ -588,7 +588,8 @@ def _http_error(
             f"{provider_label} returned HTTP 404 for model {model!r} or its "
             "endpoint. Confirm the model ID and base URL; for Gemini, use the "
             "default /v1beta/openai API prefix rather than the full "
-            f"/chat/completions URL. Provider response: {body[:500]}"
+            "/chat/completions URL and an available compatibility model such as "
+            f"'gemini-3.8-flash'. Provider response: {body[:500]}"
         )
     elif status == 400 and (
         "model" in folded

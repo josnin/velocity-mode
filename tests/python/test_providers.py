@@ -465,7 +465,7 @@ async def test_gemini_uses_developer_api_with_dedicated_key_and_tool_calling():
         return httpx.Response(200, stream=ByteStream([data]))
 
     provider = GeminiProvider(
-        "gemini-2.5-flash",
+        "gemini-3.8-flash",
         token="gemini-fake-key",
         transport=httpx.MockTransport(handler),
     )
@@ -489,7 +489,7 @@ async def test_gemini_uses_developer_api_with_dedicated_key_and_tool_calling():
 
 @pytest.mark.asyncio
 async def test_gemini_requires_dedicated_api_key():
-    provider = GeminiProvider("gemini-2.5-flash", token="")
+    provider = GeminiProvider("gemini-3.8-flash", token="")
 
     with pytest.raises(ProviderError, match="GEMINI_API_KEY"):
         async for _ in provider.stream([Message("user", "hello")], []):
@@ -502,7 +502,7 @@ async def test_gemini_404_explains_model_and_base_url_requirements():
         return httpx.Response(404, text="not found")
 
     provider = GeminiProvider(
-        "gemini-2.5-flash",
+        "gemini-3.8-flash",
         token="gemini-fake-key",
         transport=httpx.MockTransport(handler),
     )
@@ -512,9 +512,10 @@ async def test_gemini_404_explains_model_and_base_url_requirements():
             pass
 
     assert "HTTP 404" in str(error.value)
-    assert "gemini-2.5-flash" in str(error.value)
+    assert "gemini-3.8-flash" in str(error.value)
     assert "/v1beta/openai" in str(error.value)
     assert "/chat/completions URL" in str(error.value)
+    assert "available compatibility model" in str(error.value)
     assert "Provider response: not found" in str(error.value)
 
 

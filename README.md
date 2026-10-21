@@ -213,7 +213,7 @@ current shell, and select an available Gemini model:
 
 ```sh
 export GEMINI_API_KEY="your_gemini_api_key"
-vmode --provider gemini --model "gemini-2.5-flash"
+vmode --provider gemini --model "gemini-3.8-flash"
 ```
 
 The default endpoint is
