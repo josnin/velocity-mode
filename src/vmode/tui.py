@@ -102,6 +102,17 @@ class _TranscriptLexer(Lexer):
 def _approval_preview(name: str, arguments: dict[str, Any], workspace: Path) -> str:
     if name == "run_command":
         return "Command argv: " + repr(arguments.get("argv", []))
+    if name == "git_stage":
+        return "Approve Git staging for:\n" + "\n".join(
+            str(path) for path in arguments.get("paths", [])
+        )
+    if name == "git_commit":
+        return (
+            "Approve Git commit for:\n"
+            + "\n".join(str(path) for path in arguments.get("paths", []))
+            + "\n\n"
+            + str(arguments.get("message", ""))
+        )
     path = str(arguments.get("path", ""))
     old: list[str] = []
     preview_note = ""

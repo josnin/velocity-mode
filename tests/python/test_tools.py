@@ -1,4 +1,5 @@
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -9,6 +10,25 @@ from vmode.tools import ToolError, ToolRegistry, definitions
 
 def _result_content(result):
     return json.loads(result.content)
+
+
+def _git(repository: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *arguments],
+        cwd=repository,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+
+def _git_repository(path: Path) -> None:
+    _git(path, "init")
+    _git(path, "config", "user.name", "Test User")
+    _git(path, "config", "user.email", "test@example.com")
+    (path / "base.txt").write_text("base\n", encoding="utf-8")
+    _git(path, "add", "--", "base.txt")
+    _git(path, "commit", "-m", "initial")
 
 
 @pytest.mark.asyncio
@@ -183,6 +203,94 @@ async def test_write_and_command_require_approval(tmp_path: Path):
     assert not (tmp_path / "new.txt").exists()
     command = await registry.invoke("run_command", {"argv": ["printf", "no"]})
     assert not command.approved
+
+
+@pytest.mark.asyncio
+async def test_git_status_and_diff_handle_baseline_and_unusual_paths(tmp_path: Path):
+    _git_repository(tmp_path)
+    (tmp_path / "base.txt").write_text("changed\n", encoding="utf-8")
+    unusual = tmp_path / "space\tname.txt"
+    unusual.write_text("untracked content\n", encoding="utf-8")
+    registry = ToolRegistry(tmp_path)
+    await registry.begin_task()
+
+    status = _result_content(await registry.invoke("git_status", {}))
+    by_path = {entry["path"]: entry for entry in status["entries"]}
+    assert by_path["base.txt"]["unstaged"]
+    assert by_path["space\tname.txt"]["untracked"]
+
+    diff = _result_content(await registry.invoke("git_diff", {"paths": ["base.txt"]}))
+    assert "changed" in diff["diff"]
+    untracked = _result_content(await registry.invoke("git_diff", {}))
+    assert untracked["untracked"] == ["space\tname.txt"]
+    assert "untracked content" not in untracked["diff"]
+
+
+@pytest.mark.asyncio
+async def test_git_stage_preserves_baseline_changes_and_commits_verified_paths(
+    tmp_path: Path,
+):
+    _git_repository(tmp_path)
+    (tmp_path / "user.txt").write_text("user work\n", encoding="utf-8")
+    _git(tmp_path, "add", "--", "user.txt")
+    (tmp_path / "notes.txt").write_text("unrelated\n", encoding="utf-8")
+
+    async def approve(name, arguments):
+        return True
+
+    registry = ToolRegistry(tmp_path, approve=approve)
+    await registry.begin_task()
+    await registry.invoke("write_file", {"path": "task.txt", "content": "task work\n"})
+    with pytest.raises(ToolError, match="baseline user changes"):
+        await registry.invoke("git_stage", {"paths": ["user.txt"]})
+    staged = _result_content(await registry.invoke("git_stage", {"paths": ["task.txt"]}))
+    assert "task.txt" in staged["staged_paths"]
+    with pytest.raises(ToolError, match="differ from VMode-verified"):
+        await registry.invoke("git_commit", {"message": "feat: add task"})
+    assert (tmp_path / "notes.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_git_commit_requires_approval_and_adds_one_trailer(tmp_path: Path):
+    _git_repository(tmp_path)
+
+    async def approve(name, arguments):
+        return True
+
+    registry = ToolRegistry(tmp_path, approve=approve)
+    await registry.begin_task()
+    await registry.invoke("write_file", {"path": "task.txt", "content": "task work\n"})
+    with pytest.raises(ToolError, match="at least one explicit path"):
+        await registry.invoke("git_stage", {"paths": []})
+    await registry.invoke("git_stage", {"paths": ["task.txt"]})
+    committed = _result_content(
+        await registry.invoke(
+            "git_commit",
+            {
+                "message": (
+                    "feat: add task\n\n"
+                    "Co-authored-by: Velocity-Mode <velocity-mode@users.noreply.github.com>"
+                )
+            },
+        )
+    )
+    assert len(committed["commit"]) == 40
+    message = _git(tmp_path, "log", "-1", "--format=%B").stdout
+    assert message.count("Co-authored-by: Velocity-Mode <velocity-mode@users.noreply.github.com>") == 1
+
+
+@pytest.mark.asyncio
+async def test_git_stage_and_commit_require_approval(tmp_path: Path):
+    _git_repository(tmp_path)
+
+    async def approve(name, arguments):
+        return name == "write_file"
+
+    registry = ToolRegistry(tmp_path, approve=approve)
+    await registry.begin_task()
+    await registry.invoke("write_file", {"path": "task.txt", "content": "task work\n"})
+    staged = await registry.invoke("git_stage", {"paths": ["task.txt"]})
+    assert not staged.approved
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -49,6 +50,27 @@ def definitions() -> list[dict[str, Any]]:
                 "new_text": {"type": "string"},
             },
         ),
+        _function("git_status", "Inspect the current Git working tree status", {}),
+        _function(
+            "git_diff",
+            "Inspect working-tree or staged Git changes; untracked files are listed without contents",
+            {
+                "staged": {"type": "boolean"},
+                "paths": {"type": "array", "items": {"type": "string"}},
+            },
+            required=[],
+        ),
+        _function(
+            "git_stage",
+            "Stage explicitly selected VMode-created task changes; requires approval",
+            {"paths": {"type": "array", "items": {"type": "string"}}},
+        ),
+        _function(
+            "git_commit",
+            "Commit only VMode-verified staged changes; requires approval",
+            {"message": {"type": "string"}},
+            required=[],
+        ),
         _function("run_command", "Run an approved command using argv in the project directory", {"argv": {"type": "array", "items": {"type": "string"}}}),
     ]
 
@@ -69,6 +91,19 @@ class ToolRegistry:
         self.search_timeout = search_timeout
         self.rg_executable = rg_executable
         self._ignore_patterns: tuple[str, ...] | None = None
+        self._git_baseline: dict[str, dict[str, Any]] | None = None
+        self._git_task_contents: dict[str, str] = {}
+        self._git_verified_paths: set[str] = set()
+
+    async def begin_task(self) -> None:
+        self._git_baseline = None
+        self._git_task_contents.clear()
+        self._git_verified_paths.clear()
+        try:
+            status = await self._git_status()
+        except ToolError:
+            return
+        self._git_baseline = {entry["path"]: entry for entry in status["entries"]}
 
     def attach_references(self, prompt: str, per_file_limit: int = 200_000,
                           total_limit: int = 500_000) -> str:
@@ -182,6 +217,10 @@ class ToolRegistry:
                 {"path", "old_text", "new_text"},
                 {"path", "old_text", "new_text"},
             ),
+            "git_status": (set(), set()),
+            "git_diff": (set(), {"staged", "paths"}),
+            "git_stage": ({"paths"}, {"paths"}),
+            "git_commit": (set(), {"message"}),
             "run_command": ({"argv"}, {"argv"}),
         }
         if name not in schemas:
@@ -226,6 +265,7 @@ class ToolRegistry:
                 raise ToolError("refusing to modify a .gitignore-excluded file")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
+            await self._record_git_task_path(path, content)
             return ToolResult(f"Wrote {path.relative_to(self.root)}")
         if name == "edit_file":
             path = self._path(arguments.get("path"))
@@ -266,7 +306,24 @@ class ToolRegistry:
             if current != original:
                 raise ToolError("file changed while awaiting approval; edit was not applied")
             path.write_text(updated, encoding="utf-8")
+            await self._record_git_task_path(path, updated)
             return ToolResult(f"Edited {path.relative_to(self.root)}")
+        if name == "git_status":
+            return ToolResult(self._json_result(await self._git_status()))
+        if name == "git_diff":
+            staged = arguments.get("staged", False)
+            if type(staged) is not bool:
+                raise ToolError("staged must be a boolean")
+            paths = self._git_paths(arguments.get("paths", []))
+            return ToolResult(await self._git_diff(staged, paths))
+        if name == "git_stage":
+            paths = self._git_paths(arguments.get("paths"))
+            return await self._git_stage(paths, arguments)
+        if name == "git_commit":
+            message = arguments.get("message")
+            if message is not None and (not isinstance(message, str) or not message.strip()):
+                raise ToolError("message must be a non-empty string when provided")
+            return await self._git_commit(message, arguments)
         if name == "run_command":
             argv = arguments.get("argv")
             if not isinstance(argv, list) or not argv or not all(isinstance(arg, str) for arg in argv):
@@ -474,6 +531,301 @@ class ToolRegistry:
         detail = stderr.decode(errors="replace").strip()
         suffix = f": {detail}" if detail else ""
         return f"ripgrep {operation} failed with exit code {returncode}{suffix}"
+
+    def _git_paths(self, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list) or not all(isinstance(path, str) for path in value):
+            raise ToolError("paths must be a list of strings")
+        paths: list[str] = []
+        for value_path in value:
+            if not value_path or value_path == "." or value_path.startswith(":") or any(
+                character in value_path for character in "*?[]"
+            ):
+                raise ToolError("paths must be explicit workspace-relative file paths")
+            path = self._path(value_path)
+            relative = path.relative_to(self.root).as_posix()
+            if relative not in paths:
+                paths.append(relative)
+        return paths
+
+    async def _run_git(self, arguments: list[str]) -> tuple[bytes, bytes, int, bool]:
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "git",
+                *arguments,
+                cwd=self.root,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError:
+            raise ToolError("git is required for Git tools and must be on PATH") from None
+        except OSError as exc:
+            raise ToolError(f"cannot start git: {exc.strerror}") from exc
+
+        async def read_limited(stream: asyncio.StreamReader) -> tuple[bytes, bool]:
+            output = bytearray()
+            truncated = False
+            while chunk := await stream.read(8192):
+                remaining = self.output_limit - len(output)
+                output.extend(chunk[:max(0, remaining)])
+                truncated = truncated or len(chunk) > remaining
+            return bytes(output), truncated
+
+        try:
+            (stdout, stdout_truncated), (stderr, stderr_truncated), _ = (
+                await asyncio.wait_for(
+                    asyncio.gather(
+                        read_limited(process.stdout),
+                        read_limited(process.stderr),
+                        process.wait(),
+                    ),
+                    self.command_timeout,
+                )
+            )
+        except (TimeoutError, asyncio.CancelledError):
+            if process.returncode is None:
+                process.terminate()
+            await process.wait()
+            raise ToolError("git operation timed out")
+        return stdout, stderr, process.returncode, stdout_truncated or stderr_truncated
+
+    async def _ensure_git_repository(self) -> None:
+        stdout, _, returncode, truncated = await self._run_git(
+            ["rev-parse", "--is-inside-work-tree"]
+        )
+        if returncode != 0 or truncated or stdout.strip() != b"true":
+            raise ToolError("workspace is not inside a Git working tree")
+
+    async def _git_status(self) -> dict[str, Any]:
+        await self._ensure_git_repository()
+        stdout, stderr, returncode, truncated = await self._run_git(
+            [
+                "-c",
+                "status.relativePaths=true",
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+            ]
+        )
+        if returncode != 0 or truncated:
+            raise ToolError(self._git_error("status", returncode, stderr, truncated))
+        records = stdout.split(b"\0")
+        entries: list[dict[str, Any]] = []
+        index = 0
+        while index < len(records):
+            record = records[index]
+            index += 1
+            if not record:
+                continue
+            if len(record) < 3 or record[2:3] != b" ":
+                raise ToolError("git returned malformed porcelain status")
+            code = record[:2].decode("ascii", errors="replace")
+            path = record[3:].decode("utf-8", errors="surrogateescape")
+            entry: dict[str, Any] = {
+                "path": path,
+                "index": code[0],
+                "worktree": code[1],
+                "staged": code[0] not in {" ", "?"},
+                "unstaged": code[1] != " ",
+                "untracked": code == "??",
+                "conflicted": "U" in code or code in {"AA", "DD"},
+                "renamed": "R" in code,
+                "copied": "C" in code,
+            }
+            if "R" in code or "C" in code:
+                if index >= len(records) or not records[index]:
+                    raise ToolError("git returned incomplete rename status")
+                entry["original_path"] = records[index].decode(
+                    "utf-8", errors="surrogateescape"
+                )
+                index += 1
+            entries.append(entry)
+        branch_stdout, _, branch_code, _ = await self._run_git(
+            ["symbolic-ref", "--quiet", "--short", "HEAD"]
+        )
+        branch = (
+            branch_stdout.decode("utf-8", errors="replace").strip()
+            if branch_code == 0
+            else None
+        )
+        return {"branch": branch, "entries": entries, "truncated": False}
+
+    async def _git_diff(self, staged: bool, paths: list[str]) -> str:
+        status = await self._git_status()
+        args = ["diff", "--no-ext-diff"]
+        if staged:
+            args.append("--cached")
+        if paths:
+            args.extend(("--", *paths))
+        stdout, stderr, returncode, truncated = await self._run_git(args)
+        if returncode != 0:
+            raise ToolError(self._git_error("diff", returncode, stderr, truncated))
+        untracked = [
+            entry["path"]
+            for entry in status["entries"]
+            if entry["untracked"] and (not paths or entry["path"] in paths)
+        ]
+        text = stdout.decode("utf-8", errors="replace")
+        marker = "\n[diff truncated]" if truncated else ""
+        payload = {
+            "staged": staged,
+            "paths": paths,
+            "diff": text + marker,
+            "untracked": untracked,
+            "truncated": truncated,
+        }
+        content = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        if len(content) > self.output_limit:
+            payload["diff"] = text[: max(0, self.output_limit // 2)] + "\n[diff truncated]"
+            payload["truncated"] = True
+            content = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        return content
+
+    async def _record_git_task_path(self, path: Path, content: str) -> None:
+        if self._git_baseline is None:
+            return
+        relative = path.relative_to(self.root).as_posix()
+        if relative not in self._git_baseline:
+            self._git_task_contents[relative] = content
+
+    async def _git_stage(
+        self, paths: list[str], arguments: dict[str, Any]
+    ) -> ToolResult:
+        if not paths:
+            raise ToolError("git_stage requires at least one explicit path")
+        if self._git_baseline is None:
+            raise ToolError("git_stage requires a task Git baseline")
+        status = await self._git_status()
+        current = {entry["path"]: entry for entry in status["entries"]}
+        self._validate_git_stage_paths(paths, current)
+        if not await self._approval("git_stage", arguments):
+            return ToolResult("Operation denied by user.", approved=False)
+        status = await self._git_status()
+        current = {entry["path"]: entry for entry in status["entries"]}
+        self._validate_git_stage_paths(paths, current)
+        _, stderr, returncode, truncated = await self._run_git(["add", "--", *paths])
+        if returncode != 0:
+            detail = stderr.decode("utf-8", errors="replace").lower()
+            if "ignored" in detail:
+                raise ToolError("git refused to stage an ignored path")
+            raise ToolError(self._git_error("stage", returncode, stderr, truncated))
+        staged = await self._git_status()
+        staged_paths = {
+            entry["path"] for entry in staged["entries"] if entry["staged"]
+        }
+        if not set(paths).issubset(staged_paths):
+            raise ToolError("git did not stage every approved path")
+        self._git_verified_paths.update(paths)
+        return ToolResult(
+            self._json_result(
+                {
+                    "staged_paths": sorted(self._git_verified_paths),
+                    "branch": staged["branch"],
+                    "entries": staged["entries"],
+                }
+            )
+        )
+
+    def _validate_git_stage_paths(
+        self, paths: list[str], current: dict[str, dict[str, Any]]
+    ) -> None:
+        for path in paths:
+            if path in self._git_baseline:
+                raise ToolError(f"{path} had baseline user changes and will not be staged")
+            if path not in self._git_task_contents:
+                raise ToolError(f"{path} was not modified by VMode in this task")
+            entry = current.get(path)
+            if entry is None:
+                raise ToolError(f"{path} has no current Git change to stage")
+            if entry["conflicted"]:
+                raise ToolError(f"{path} has unresolved merge conflicts")
+            candidate = self.root / path
+            if candidate.exists() and candidate.read_text(encoding="utf-8") != self._git_task_contents[path]:
+                raise ToolError(f"{path} changed after VMode wrote it and will not be staged")
+
+    async def _git_commit(
+        self, message: str | None, arguments: dict[str, Any]
+    ) -> ToolResult:
+        status = await self._git_status()
+        staged_paths = {entry["path"] for entry in status["entries"] if entry["staged"]}
+        if not staged_paths:
+            raise ToolError("git_commit requires non-empty staged changes")
+        if staged_paths != self._git_verified_paths:
+            raise ToolError("staged changes differ from VMode-verified staging plan")
+        if any(entry["conflicted"] for entry in status["entries"]):
+            raise ToolError("git_commit refuses unresolved merge conflicts")
+        diff, _, returncode, truncated = await self._run_git(
+            ["diff", "--cached", "--no-ext-diff"]
+        )
+        if returncode != 0 or truncated or not diff:
+            raise ToolError("git_commit requires a bounded non-empty staged diff")
+        trailer = "Co-authored-by: Velocity-Mode <velocity-mode@users.noreply.github.com>"
+        lines = (message or "chore: update staged files").strip().splitlines()
+        lines = [line for line in lines if line.lower() != trailer.lower()]
+        commit_message = "\n".join(lines).rstrip() + "\n\n" + trailer
+        approval_args = {
+            **arguments,
+            "message": commit_message,
+            "paths": sorted(staged_paths),
+        }
+        fingerprint = hashlib.sha256(diff).digest()
+        if not await self._approval("git_commit", approval_args):
+            return ToolResult("Operation denied by user.", approved=False)
+        current_diff, _, current_code, current_truncated = await self._run_git(
+            ["diff", "--cached", "--no-ext-diff"]
+        )
+        current_status = await self._git_status()
+        current_paths = {
+            entry["path"] for entry in current_status["entries"] if entry["staged"]
+        }
+        if (
+            current_code != 0
+            or current_truncated
+            or hashlib.sha256(current_diff).digest() != fingerprint
+            or current_paths != staged_paths
+        ):
+            raise ToolError("staged changes changed while awaiting approval")
+        _, stderr, returncode, truncated = await self._run_git(
+            ["commit", "-m", commit_message]
+        )
+        if returncode != 0:
+            raise ToolError(self._git_error("commit", returncode, stderr, truncated))
+        head, _, head_code, _ = await self._run_git(["rev-parse", "HEAD"])
+        if head_code != 0:
+            raise ToolError("commit succeeded but Git could not report HEAD")
+        self._git_verified_paths.clear()
+        return ToolResult(
+            self._json_result(
+                {
+                    "commit": head.decode("ascii", errors="replace").strip(),
+                    "branch": (final_status := await self._git_status())["branch"],
+                    "entries": final_status["entries"],
+                }
+            )
+        )
+
+    def _json_result(self, payload: dict[str, Any]) -> str:
+        content = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        if len(content) <= self.output_limit:
+            return content
+        if isinstance(payload.get("entries"), list):
+            payload = {**payload, "entries": list(payload["entries"]), "truncated": True}
+            while payload["entries"]:
+                payload["entries"].pop()
+                content = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+                if len(content) <= self.output_limit:
+                    return content
+        return content[: self.output_limit] + "\n[output truncated]"
+
+    @staticmethod
+    def _git_error(operation: str, returncode: int, stderr: bytes, truncated: bool) -> str:
+        detail = stderr.decode("utf-8", errors="replace").strip()
+        suffix = f": {detail}" if detail else ""
+        if truncated:
+            suffix += " [output truncated]"
+        return f"git {operation} failed with exit code {returncode}{suffix}"
 
     async def _approval(self, name: str, arguments: dict[str, Any]) -> bool:
         if self.approve is None:

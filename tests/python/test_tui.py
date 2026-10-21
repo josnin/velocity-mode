@@ -22,6 +22,20 @@ def test_edit_approval_preview_shows_targeted_diff(tmp_path: Path):
     assert "+Author: Josnin" in preview
 
 
+def test_git_approval_previews_show_paths_and_message(tmp_path: Path):
+    stage_preview = _approval_preview("git_stage", {"paths": ["src/main.py"]}, tmp_path)
+    commit_preview = _approval_preview(
+        "git_commit",
+        {"paths": ["src/main.py"], "message": "feat: add main"},
+        tmp_path,
+    )
+
+    assert "Approve Git staging" in stage_preview
+    assert "src/main.py" in stage_preview
+    assert "Approve Git commit" in commit_preview
+    assert "feat: add main" in commit_preview
+
+
 def test_write_approval_preview_never_reads_outside_workspace(tmp_path: Path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()

@@ -74,6 +74,10 @@ def build_system_prompt(provider: Provider, workspace: Path) -> str:
             "For a requested write, edit, or command, invoke the tool instead of "
             "asking for approval in text; the runtime presents the user approval "
             "prompt. Use run_command only when needed to verify your changes. "
+            "When asked to commit, inspect git_status and git_diff first, stage "
+            "only explicit VMode-created task paths with git_stage, and commit "
+            "only that verified staged plan with git_commit. Never use broad Git "
+            "staging, amend, push, reset, clean, stash, or history rewriting. "
             "Explain actions and results, and never claim a tool succeeded unless "
             "its result confirms it."
         )

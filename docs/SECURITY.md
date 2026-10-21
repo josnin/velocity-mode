@@ -40,6 +40,10 @@ system sandbox.
 - `write_file`, `edit_file`, and `run_command` require a user approval
   callback. The interactive UI shows the write/edit diff or argv before
   approval. Noninteractive mode denies these operations and reports failure.
+- `git_stage` and `git_commit` require separate user approvals. Git staging
+  accepts only explicit VMode-created task paths; commits require exactly the
+  verified staged path set and never push, amend, reset, clean, stash, or
+  rewrite history.
 - Interactive `:w <file>` explicitly saves the selected completed model result
   inside the workspace. It never saves the prompt draft; model-requested file
   writes continue to go through the approval callback.

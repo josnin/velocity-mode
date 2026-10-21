@@ -35,6 +35,7 @@ class Agent:
     async def run(self, task: str) -> AsyncIterator[AgentEvent]:
         self._cancelled = False
         started = time.monotonic()
+        await self.tools.begin_task()
         pruned_turns = self._prune_history(
             self.limits.max_history_turns - 1,
             self.limits.max_history_chars,
