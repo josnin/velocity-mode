@@ -40,6 +40,15 @@ def definitions() -> list[dict[str, Any]]:
             required=["query"],
         ),
         _function("write_file", "Write UTF-8 content to a project file; requires approval", {"path": {"type": "string"}, "content": {"type": "string"}}),
+        _function(
+            "edit_file",
+            "Replace one exact text occurrence in an existing UTF-8 project file; requires approval",
+            {
+                "path": {"type": "string"},
+                "old_text": {"type": "string"},
+                "new_text": {"type": "string"},
+            },
+        ),
         _function("run_command", "Run an approved command using argv in the project directory", {"argv": {"type": "array", "items": {"type": "string"}}}),
     ]
 
@@ -169,6 +178,10 @@ class ToolRegistry:
             "list_files": (set(), {"pattern"}),
             "search_files": ({"query"}, {"query", "literal"}),
             "write_file": ({"path", "content"}, {"path", "content"}),
+            "edit_file": (
+                {"path", "old_text", "new_text"},
+                {"path", "old_text", "new_text"},
+            ),
             "run_command": ({"argv"}, {"argv"}),
         }
         if name not in schemas:
@@ -214,6 +227,46 @@ class ToolRegistry:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
             return ToolResult(f"Wrote {path.relative_to(self.root)}")
+        if name == "edit_file":
+            path = self._path(arguments.get("path"))
+            old_text, new_text = arguments.get("old_text"), arguments.get("new_text")
+            if not isinstance(old_text, str) or not old_text:
+                raise ToolError("old_text must be a non-empty string")
+            if not isinstance(new_text, str):
+                raise ToolError("new_text must be a string")
+            if self._ignored(path):
+                raise ToolError("refusing to modify a .gitignore-excluded file")
+            try:
+                with path.open("rb") as stream:
+                    data = stream.read(self.output_limit + 1)
+            except FileNotFoundError as exc:
+                raise ToolError("edit_file requires an existing file") from exc
+            except OSError as exc:
+                raise ToolError(f"cannot read file for edit: {exc.strerror}") from exc
+            if len(data) > self.output_limit or b"\0" in data:
+                raise ToolError("file is binary or exceeds the output limit")
+            try:
+                original = data.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ToolError("file is not valid UTF-8") from exc
+            occurrences = original.count(old_text)
+            if occurrences != 1:
+                raise ToolError(
+                    f"old_text must occur exactly once in the file; found {occurrences}"
+                )
+            updated = original.replace(old_text, new_text, 1)
+            if len(updated.encode()) > self.output_limit:
+                raise ToolError("edit exceeds output limit")
+            if not await self._approval(name, arguments):
+                return ToolResult("Operation denied by user.", approved=False)
+            try:
+                current = path.read_text(encoding="utf-8")
+            except OSError as exc:
+                raise ToolError(f"cannot verify file before edit: {exc.strerror}") from exc
+            if current != original:
+                raise ToolError("file changed while awaiting approval; edit was not applied")
+            path.write_text(updated, encoding="utf-8")
+            return ToolResult(f"Edited {path.relative_to(self.root)}")
         if name == "run_command":
             argv = arguments.get("argv")
             if not isinstance(argv, list) or not argv or not all(isinstance(arg, str) for arg in argv):

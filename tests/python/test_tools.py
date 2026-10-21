@@ -199,6 +199,42 @@ async def test_approved_write_and_command_use_workspace(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_edit_file_requires_approval_and_one_exact_target(tmp_path: Path):
+    path = tmp_path / "README.md"
+    path.write_text("# Project\nAuthor: unknown\n", encoding="utf-8")
+    denied = await ToolRegistry(tmp_path).invoke(
+        "edit_file",
+        {
+            "path": "README.md",
+            "old_text": "Author: unknown",
+            "new_text": "Author: Josnin",
+        },
+    )
+    assert not denied.approved
+    assert path.read_text(encoding="utf-8") == "# Project\nAuthor: unknown\n"
+
+    async def approve(name, arguments):
+        return True
+
+    registry = ToolRegistry(tmp_path, approve=approve)
+    result = await registry.invoke(
+        "edit_file",
+        {
+            "path": "README.md",
+            "old_text": "Author: unknown",
+            "new_text": "Author: Josnin",
+        },
+    )
+    assert result.content == "Edited README.md"
+    assert path.read_text(encoding="utf-8") == "# Project\nAuthor: Josnin\n"
+    with pytest.raises(ToolError, match="exactly once"):
+        await registry.invoke(
+            "edit_file",
+            {"path": "README.md", "old_text": "missing", "new_text": "value"},
+        )
+
+
+@pytest.mark.asyncio
 async def test_command_timeout_stops_subprocess(tmp_path: Path):
     async def approve(name, arguments):
         return True

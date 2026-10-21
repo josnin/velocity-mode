@@ -37,9 +37,9 @@ system sandbox.
   escapes, excluded generated/vendor directories, and matching root
   `.gitignore` patterns are rejected. File references attach only explicitly
   selected files and obey per-file/aggregate limits.
-- `write_file` and `run_command` require a user approval callback. The
-  interactive UI shows the write diff or argv before approval. Noninteractive
-  mode denies these operations and reports failure.
+- `write_file`, `edit_file`, and `run_command` require a user approval
+  callback. The interactive UI shows the write/edit diff or argv before
+  approval. Noninteractive mode denies these operations and reports failure.
 - Interactive `:w <file>` explicitly saves the selected completed model result
   inside the workspace. It never saves the prompt draft; model-requested file
   writes continue to go through the approval callback.

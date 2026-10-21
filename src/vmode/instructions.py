@@ -68,9 +68,14 @@ def build_system_prompt(provider: Provider, workspace: Path) -> str:
             "represent a tool call in prose, Markdown, or code because that does "
             "not execute it. Do not claim a file was changed unless the matching "
             "write tool result confirms it. "
-            "Use run_command only when needed to verify your changes. The user "
-            "must approve every file write or command. Explain actions and "
-            "results, and never claim a tool succeeded unless its result confirms it."
+            "For a focused change to an existing file, read it first and prefer "
+            "edit_file with an exact old_text and new_text; use write_file only "
+            "to create a file or replace its complete content. "
+            "For a requested write, edit, or command, invoke the tool instead of "
+            "asking for approval in text; the runtime presents the user approval "
+            "prompt. Use run_command only when needed to verify your changes. "
+            "Explain actions and results, and never claim a tool succeeded unless "
+            "its result confirms it."
         )
     else:
         base = (

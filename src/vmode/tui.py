@@ -115,9 +115,22 @@ def _approval_preview(name: str, arguments: dict[str, Any], workspace: Path) -> 
                 old = stream.read(100_001).splitlines(keepends=True)
     except (OSError, UnicodeError, ValueError, RuntimeError):
         preview_note = "(existing content unavailable; diff may be incomplete)"
-    content = arguments.get("content", "")
-    if not isinstance(content, str):
-        content = ""
+    if name == "edit_file":
+        old_text, new_text = arguments.get("old_text"), arguments.get("new_text")
+        original = "".join(old)
+        if (
+            isinstance(old_text, str)
+            and isinstance(new_text, str)
+            and original.count(old_text) == 1
+        ):
+            content = original.replace(old_text, new_text, 1)
+        else:
+            content = original
+            preview_note = "(exact edit target is unavailable; diff may be incomplete)"
+    else:
+        content = arguments.get("content", "")
+        if not isinstance(content, str):
+            content = ""
     diff = "".join(
         difflib.unified_diff(
             old,
@@ -128,7 +141,8 @@ def _approval_preview(name: str, arguments: dict[str, Any], workspace: Path) -> 
     )
     if len(diff) > 8_000:
         diff = diff[:8_000] + "\n[approval diff truncated]\n"
-    heading = f"Approve write to {path}?\n"
+    operation = "edit" if name == "edit_file" else "write"
+    heading = f"Approve {operation} to {path}?\n"
     if preview_note:
         heading += preview_note + "\n"
     return heading + (diff or "(no content change)")

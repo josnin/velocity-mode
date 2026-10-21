@@ -7,7 +7,7 @@
 - Async provider protocol, deterministic mock, Hugging Face streaming Chat
   Completions adapter, usage reporting, and normalized errors.
 - Bounded structured agent/tool/result/model loop with file references.
-- Allowlisted file/search/list/write/command tools with workspace checks and
+- Allowlisted file/search/list/write/edit/command tools with workspace checks and
   approval before writes and commands.
 - `prompt_toolkit` Vi editing, multiline prompt, command/file completion,
   explicit Normal-mode motions, Ctrl+S submission with `:s` fallback,

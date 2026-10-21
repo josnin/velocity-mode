@@ -3,6 +3,25 @@ from pathlib import Path
 from vmode.tui import _approval_preview
 
 
+def test_edit_approval_preview_shows_targeted_diff(tmp_path: Path):
+    path = tmp_path / "README.md"
+    path.write_text("# Project\nAuthor: unknown\n", encoding="utf-8")
+
+    preview = _approval_preview(
+        "edit_file",
+        {
+            "path": "README.md",
+            "old_text": "Author: unknown",
+            "new_text": "Author: Josnin",
+        },
+        tmp_path,
+    )
+
+    assert preview.startswith("Approve edit to README.md?")
+    assert "-Author: unknown" in preview
+    assert "+Author: Josnin" in preview
+
+
 def test_write_approval_preview_never_reads_outside_workspace(tmp_path: Path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()

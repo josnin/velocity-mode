@@ -34,6 +34,8 @@ def test_tool_capable_prompt_rejects_textual_pseudo_calls(tmp_path: Path):
 
     assert "never represent a tool call in prose, Markdown, or code" in prompt
     assert "Do not claim a file was changed unless the matching write tool result confirms it" in prompt
+    assert "prefer edit_file with an exact old_text and new_text" in prompt
+    assert "invoke the tool instead of asking for approval in text" in prompt
 
 
 def test_workspace_instruction_symlinks_and_invalid_utf8_are_rejected(tmp_path: Path):

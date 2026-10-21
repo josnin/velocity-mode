@@ -337,7 +337,9 @@ not guarantee the selected model supports or reliably follows them. Mock
 ## Tools and safety
 
 The tool registry is allowlisted: `read_file`, `list_files`, `search_files`,
-`write_file`, and `run_command`. Writes and commands require interactive
+`write_file`, `edit_file`, and `run_command`. `edit_file` replaces one exact
+text occurrence in an existing file, which avoids regenerating the complete
+file for focused changes. Writes, edits, and commands require interactive
 approval. Noninteractive `--exec` refuses those operations and exits with an
 error. Commands use argument arrays (never a shell string), run from the
 workspace, and have time/output bounds. File paths are confined to the
