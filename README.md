@@ -48,14 +48,13 @@ The `list_files` and `search_files` agent tools require
 [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) on `PATH`. It is an
 external runtime requirement, not a Python dependency.
 Ripgrep provides regex searching with smart-case matching, literal matching
-when requested by the agent, paths, and line numbers. To install it without
-elevated privileges, use a user-level package manager or Cargo:
+when requested by the agent, paths, and line numbers. On Fedora, install it
+with:
 
 ```sh
-cargo install ripgrep
+sudo dnf install ripgrep
 ```
 
-Ensure Cargo's user bin directory (normally `~/.cargo/bin`) is on `PATH`.
 Velocity-Mode reports an explicit error when `rg` is unavailable; install it
 before using workspace discovery or search.
 
