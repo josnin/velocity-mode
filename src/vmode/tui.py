@@ -534,7 +534,6 @@ async def run_tui(
             state.selected_response = len(state.responses) - 1
 
         async def run() -> None:
-            error_text = ""
             try:
                 assert agent is not None
                 async for event in agent.run(cleaned):
@@ -561,10 +560,10 @@ async def run_tui(
                         state.activities = state.activities[-3:]
                         app.invalidate()
                     elif event.kind == "error":
-                        error_text = f"Error: {event.text}"
                         assistant_item.incomplete = True
-                        state.items.append(_TranscriptItem("notice", error_text))
-                        app.invalidate()
+                        finalize_response(incomplete=True)
+                        state.items.append(_TranscriptItem("notice", f"Error: {event.text}"))
+                        redraw_transcript(transcript, app)
                     elif event.kind == "done":
                         state.activities.append("Turn complete")
                         if assistant_item.text:
@@ -581,20 +580,11 @@ async def run_tui(
                 raise
             except Exception as exc:
                 assistant_item.incomplete = bool(assistant_item.text)
-                error_text = f"Agent failed: {exc}"
                 state.items.append(
-                    _TranscriptItem("notice", error_text)
+                    _TranscriptItem("notice", f"Agent failed: {exc}")
                 )
             finally:
                 finalize_response(incomplete=True)
-                if error_text and not assistant_item.text and assistant_item.response_id is None:
-                    assistant_item.response_id = state.next_response_id
-                    state.next_response_id += 1
-                    state.responses.append(
-                        _Response(assistant_item.response_id, error_text)
-                    )
-                    del state.responses[:-MAX_RESPONSES]
-                    state.selected_response = len(state.responses) - 1
                 state.busy = False
                 state.pending_approval = ""
                 state.approval_future = None
