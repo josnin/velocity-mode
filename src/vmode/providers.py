@@ -295,7 +295,11 @@ class OpenAICompatibleProvider:
                                 safe_text = redactor.feed(text)
                                 if safe_text:
                                     yield ProviderEvent("text", text=safe_text)
-                            tool_parts = delta.get("tool_calls", [])
+                            tool_parts = delta.get("tool_calls")
+                            if tool_parts is None:
+                                tool_parts = []
+                            elif isinstance(tool_parts, dict):
+                                tool_parts = [tool_parts]
                             if not isinstance(tool_parts, list):
                                 raise ProviderError(
                                     f"Malformed tool-call deltas from {self.provider_label}."

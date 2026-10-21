@@ -4,7 +4,7 @@ import json
 import httpx
 import pytest
 
-from vmode.protocol import Message, ProviderError
+from vmode.protocol import Message, ProviderError, ToolCall
 from vmode.providers import (
     HuggingFaceProvider,
     OllamaProvider,
@@ -95,6 +95,36 @@ async def test_huggingface_stream_parses_text_tool_calls_usage_and_request():
     assert captured["headers"]["authorization"] == "Bearer fake-token"
     assert captured["body"]["stream"] is True
     assert captured["body"]["model"] == "vendor/model:fastest"
+
+
+@pytest.mark.asyncio
+async def test_huggingface_accepts_null_and_single_object_tool_call_deltas():
+    data = (
+        b'data: {"choices":[{"delta":{"content":"Checking","tool_calls":null}}]}\n\n'
+        b'data: {"choices":[{"delta":{"tool_calls":{"index":0,"id":"id-1",'
+        b'"function":{"name":"read_file","arguments":"{\\"path\\":\\"README.md\\"}"}}},'
+        b'"finish_reason":"tool_calls"}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+
+    async def handler(request):
+        return httpx.Response(200, stream=ByteStream([data]))
+
+    provider = HuggingFaceProvider(
+        "vendor/model:fastest",
+        supports_tool_calling=True,
+        token="fake-token",
+        transport=httpx.MockTransport(handler),
+    )
+    events = [
+        event
+        async for event in provider.stream([Message("user", "Inspect README.md")], [])
+    ]
+
+    assert [event.text for event in events if event.kind == "text"] == ["Checking"]
+    assert events[-1].tool_calls == [
+        ToolCall("id-1", "read_file", {"path": "README.md"})
+    ]
 
 
 @pytest.mark.asyncio
