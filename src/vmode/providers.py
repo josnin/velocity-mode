@@ -228,6 +228,7 @@ class OpenAICompatibleProvider:
                                     self.provider_label,
                                     self.token_env,
                                     self.huggingface_routing,
+                                    self.model,
                                 )
                             )
                         async for data in _sse_data(response.aiter_bytes()):
@@ -571,6 +572,7 @@ def _http_error(
     provider_label: str,
     token_env: str,
     huggingface_routing: bool,
+    model: str,
 ) -> str:
     folded = body.lower()
     if status == 401:
@@ -582,7 +584,12 @@ def _http_error(
     elif status == 403 or status == 402 or "credit" in folded or "payment" in folded:
         reason = f"{provider_label} access was denied or credits are unavailable. Check endpoint permissions and billing. No retry was performed."
     elif status == 404:
-        reason = f"The model or endpoint is unavailable from {provider_label}."
+        reason = (
+            f"{provider_label} returned HTTP 404 for model {model!r} or its "
+            "endpoint. Confirm the model ID and base URL; for Gemini, use the "
+            "default /v1beta/openai API prefix rather than the full "
+            "/chat/completions URL."
+        )
     elif status == 400 and (
         "model" in folded
         and any(

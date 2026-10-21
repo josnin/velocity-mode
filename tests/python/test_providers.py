@@ -497,6 +497,27 @@ async def test_gemini_requires_dedicated_api_key():
 
 
 @pytest.mark.asyncio
+async def test_gemini_404_explains_model_and_base_url_requirements():
+    async def handler(request):
+        return httpx.Response(404, text="not found")
+
+    provider = GeminiProvider(
+        "gemini-2.5-flash",
+        token="gemini-fake-key",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ProviderError) as error:
+        async for _ in provider.stream([Message("user", "hello")], []):
+            pass
+
+    assert "HTTP 404" in str(error.value)
+    assert "gemini-2.5-flash" in str(error.value)
+    assert "/v1beta/openai" in str(error.value)
+    assert "/chat/completions URL" in str(error.value)
+
+
+@pytest.mark.asyncio
 async def test_ollama_uses_local_http_without_an_api_key():
     captured = {}
     data = (

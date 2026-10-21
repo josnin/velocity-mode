@@ -222,7 +222,8 @@ with a documented compatible HTTPS endpoint. Tool calling is enabled by
 default for Gemini and can be disabled with `--no-tool-calling`. Model
 availability, free-tier quotas, rate limits, tool support, and billing are
 controlled by Google and can change; select a model and account configuration
-that currently qualifies for the free tier.
+that currently qualifies for the free tier. If you set `--base-url`, use the
+API prefix ending in `/v1beta/openai`, not the full `/chat/completions` URL.
 
 ## Ollama
 
