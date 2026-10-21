@@ -515,6 +515,7 @@ async def test_gemini_404_explains_model_and_base_url_requirements():
     assert "gemini-2.5-flash" in str(error.value)
     assert "/v1beta/openai" in str(error.value)
     assert "/chat/completions URL" in str(error.value)
+    assert "Provider response: not found" in str(error.value)
 
 
 @pytest.mark.asyncio
