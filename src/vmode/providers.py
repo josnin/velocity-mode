@@ -370,7 +370,10 @@ class OpenAICompatibleProvider:
             try:
                 args = json.loads(item["arguments"] or "{}")
             except json.JSONDecodeError as exc:
-                raise ProviderError("Model returned malformed tool-call arguments.") from exc
+                raise ProviderError(
+                    "Model returned malformed tool-call arguments. The response may "
+                    "have been truncated; retry with a new or cleared context."
+                ) from exc
             if not isinstance(args, dict):
                 raise ProviderError("Model tool-call arguments must be a JSON object.")
             calls.append(ToolCall(item["id"], item["name"], args))

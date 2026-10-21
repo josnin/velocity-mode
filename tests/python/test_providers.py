@@ -128,6 +128,32 @@ async def test_huggingface_accepts_null_and_single_object_tool_call_deltas():
 
 
 @pytest.mark.asyncio
+async def test_huggingface_explains_malformed_tool_call_arguments():
+    data = (
+        b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"id-1",'
+        b'"function":{"name":"read_file","arguments":"{\\"path\\":\\"README.md\\""}}]},'
+        b'"finish_reason":"tool_calls"}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+
+    async def handler(request):
+        return httpx.Response(200, stream=ByteStream([data]))
+
+    provider = HuggingFaceProvider(
+        "vendor/model:fastest",
+        supports_tool_calling=True,
+        token="fake-token",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(ProviderError, match="malformed tool-call arguments") as error:
+        async for _ in provider.stream([Message("user", "Inspect README.md")], []):
+            pass
+
+    assert "may have been truncated" in str(error.value)
+    assert "new or cleared context" in str(error.value)
+
+
+@pytest.mark.asyncio
 async def test_huggingface_missing_token_and_credits_are_actionable():
     provider = HuggingFaceProvider("vendor/model", token="")
     with pytest.raises(ProviderError, match="HF_TOKEN"):
