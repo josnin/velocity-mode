@@ -462,6 +462,24 @@ class GeminiProvider(OpenAICompatibleProvider):
             provider_label="Google Gemini Developer API",
         )
 
+    async def stream(
+        self, messages: Sequence[Message], tools: Sequence[dict]
+    ) -> AsyncIterator[ProviderEvent]:
+        async for event in super().stream(messages, tools):
+            if (
+                event.kind == "response"
+                and event.tool_calls
+                and event.finish_reason == "stop"
+            ):
+                yield ProviderEvent(
+                    "response",
+                    tool_calls=event.tool_calls,
+                    finish_reason="tool_calls",
+                    usage=event.usage,
+                )
+            else:
+                yield event
+
 
 class OllamaProvider(OpenAICompatibleProvider):
     """Streaming Ollama OpenAI-compatible endpoint."""

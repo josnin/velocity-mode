@@ -488,6 +488,33 @@ async def test_gemini_uses_developer_api_with_dedicated_key_and_tool_calling():
 
 
 @pytest.mark.asyncio
+async def test_gemini_normalizes_stop_finish_reason_for_tool_calls():
+    data = (
+        b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1",'
+        b'"function":{"name":"read_file","arguments":"{\\"path\\":\\"README.md\\"}"}}]},'
+        b'"finish_reason":"stop"}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+
+    async def handler(request):
+        return httpx.Response(200, stream=ByteStream([data]))
+
+    provider = GeminiProvider(
+        "gemini-3.8-flash",
+        token="gemini-fake-key",
+        transport=httpx.MockTransport(handler),
+    )
+    events = [
+        event async for event in provider.stream([Message("user", "read README.md")], [])
+    ]
+
+    assert events[-1].tool_calls == [
+        ToolCall("call-1", "read_file", {"path": "README.md"})
+    ]
+    assert events[-1].finish_reason == "tool_calls"
+
+
+@pytest.mark.asyncio
 async def test_gemini_requires_dedicated_api_key():
     provider = GeminiProvider("gemini-3.8-flash", token="")
 
