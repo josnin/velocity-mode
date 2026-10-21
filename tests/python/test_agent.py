@@ -88,6 +88,23 @@ async def test_agent_explains_output_limit_and_preserves_partial_response(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_agent_rejects_empty_final_response(tmp_path: Path):
+    class EmptyProvider:
+        name = "empty"
+        model = "test"
+        capabilities = ProviderCapabilities(streaming=True, tool_calling=False)
+
+        async def stream(self, messages, tools):
+            yield ProviderEvent("response", finish_reason="stop")
+
+    agent = Agent(EmptyProvider(), ToolRegistry(tmp_path))
+    events = [event async for event in agent.run("Reply with OK")]
+
+    assert events[-1].kind == "error"
+    assert "without text or tool calls" in events[-1].text
+
+
+@pytest.mark.asyncio
 async def test_agent_enforces_tool_call_limit(tmp_path: Path):
     agent = Agent(
         MockProvider(scenario="read-file"),
@@ -198,6 +215,7 @@ async def test_history_budget_keeps_tool_call_and_result_messages_together(tmp_p
 
         async def stream(self, messages, tools):
             self.request = list(messages)
+            yield ProviderEvent("text", text="current task completed")
             yield ProviderEvent("response", finish_reason="stop")
 
     provider = RecordingProvider()

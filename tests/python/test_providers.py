@@ -163,6 +163,50 @@ async def test_huggingface_model_not_found_explains_provider_routing():
 
 
 @pytest.mark.asyncio
+async def test_huggingface_invalid_provider_route_is_actionable():
+    async def handler(request):
+        return httpx.Response(
+            400,
+            json={
+                "error": {
+                    "message": (
+                        "the provider or policy you attempted to specify "
+                        "'featherless-ui' is not valid."
+                    )
+                }
+            },
+        )
+
+    provider = HuggingFaceProvider(
+        "openai/gpt-oss-120b:featherless-ui",
+        token="fake-token",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(ProviderError, match="provider route") as error:
+        async for _ in provider.stream([Message("user", "hello")], []):
+            pass
+    assert "Inference Providers mapping" in str(error.value)
+    assert ":cheapest" in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_huggingface_rejects_empty_successful_response():
+    data = b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+
+    async def handler(request):
+        return httpx.Response(200, stream=ByteStream([data]))
+
+    provider = HuggingFaceProvider(
+        "openai/gpt-oss-120b:cheapest",
+        token="fake-token",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(ProviderError, match="without text or tool calls"):
+        async for _ in provider.stream([Message("user", "hello")], []):
+            pass
+
+
+@pytest.mark.asyncio
 async def test_huggingface_redacts_token_split_across_stream_deltas():
     frames = [
         {"choices": [{"delta": {"content": "before fake-"}, "finish_reason": None}]},

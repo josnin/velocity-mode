@@ -412,8 +412,17 @@ class HuggingFaceProvider(OpenAICompatibleProvider):
     async def stream(
         self, messages: Sequence[Message], tools: Sequence[dict]
     ) -> AsyncIterator[ProviderEvent]:
+        saw_text = False
         try:
             async for event in super().stream(messages, tools):
+                if event.kind == "text" and event.text:
+                    saw_text = True
+                elif event.kind == "response" and not saw_text and not event.tool_calls:
+                    raise ProviderError(
+                        "Hugging Face completed without text or tool calls. Try a "
+                        "named provider route from the model's Inference Providers "
+                        "mapping instead of an automatic route such as :cheapest."
+                    )
                 yield event
         except ProviderError as exc:
             message = str(exc)
@@ -559,6 +568,17 @@ def _http_error(
             )
         else:
             reason = f"{provider_label} could not find the requested model: {body[:500]}"
+    elif (
+        status == 400
+        and huggingface_routing
+        and "provider" in folded
+        and "not valid" in folded
+    ):
+        reason = (
+            "Hugging Face rejected the provider route in the model suffix. "
+            "Use a provider identifier listed in the model's Inference Providers "
+            f"mapping, or use :cheapest. Router response: {body[:500]}"
+        )
     elif status == 429:
         retry = headers.get("retry-after")
         reason = "Rate limit reached." + (f" Retry-After: {retry}." if retry else "")

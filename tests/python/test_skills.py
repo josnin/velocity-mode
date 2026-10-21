@@ -121,6 +121,7 @@ async def test_agent_freezes_skill_snapshot_for_a_task_and_reloads_on_the_next_t
 
         async def stream(self, messages, tools):
             self.requests.append(list(messages))
+            yield ProviderEvent("text", text="completed")
             yield ProviderEvent("response", finish_reason="stop")
 
     provider = RecordingProvider()

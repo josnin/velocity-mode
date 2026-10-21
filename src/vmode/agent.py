@@ -128,6 +128,13 @@ class Agent:
                     "output, or ask for a shorter response.",
                 )
                 return
+            if not response_text and not final.tool_calls:
+                yield AgentEvent(
+                    "error",
+                    "The provider completed without text or tool calls. Try a "
+                    "different model or a named provider route.",
+                )
+                return
             if not final.tool_calls:
                 yield AgentEvent("done")
                 return
