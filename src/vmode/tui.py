@@ -627,6 +627,7 @@ async def run_tui(
         registry,
         AgentLimits(
             max_iterations=settings.max_iterations,
+            max_history_chars=settings.max_history_chars,
             max_output_tokens=settings.max_output_tokens,
             timeout_seconds=settings.timeout,
         ),

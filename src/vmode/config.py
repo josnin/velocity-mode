@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+DEFAULT_MAX_HISTORY_CHARS = 60_000
+GROQ_MAX_HISTORY_CHARS = 16_000
+
+
 @dataclass(slots=True)
 class Settings:
     provider: str = "mock"
@@ -13,6 +17,7 @@ class Settings:
     base_url: str = ""
     timeout: float = 300.0
     max_iterations: int = 24
+    max_history_chars: int = DEFAULT_MAX_HISTORY_CHARS
     max_output_tokens: int = 4096
     tool_calling: bool = False
     workspace: Path = Path.cwd()
@@ -65,6 +70,14 @@ def load_settings(args: object) -> Settings:
         base_url=provider.get("base_url", ""),
         timeout=float(provider.get("timeout", 300)),
         max_iterations=int(agent.get("max_iterations", 24)),
+        max_history_chars=int(
+            agent.get(
+                "max_history_chars",
+                GROQ_MAX_HISTORY_CHARS
+                if selected_provider == "groq"
+                else DEFAULT_MAX_HISTORY_CHARS,
+            )
+        ),
         max_output_tokens=int(provider.get("max_output_tokens", 4096)),
         tool_calling=file_tool_calling,
         workspace=Path.cwd(),
@@ -111,6 +124,8 @@ def load_settings(args: object) -> Settings:
         raise ValueError("Timeout must be between 1 and 600 seconds")
     if not 1 <= result.max_iterations <= 100:
         raise ValueError("Max iterations must be between 1 and 100")
+    if result.max_history_chars < 1:
+        raise ValueError("Max history chars must be at least 1")
     if not 1 <= result.max_output_tokens <= 100_000:
         raise ValueError("Max output tokens must be between 1 and 100000")
     if not result.model.strip():

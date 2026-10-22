@@ -121,6 +121,39 @@ def test_workspace_defaults_to_nearest_git_root_and_honors_explicit_directory(
     assert load_settings(args).workspace == outside_repository
 
 
+def test_groq_uses_conservative_history_budget_unless_configured(tmp_path):
+    config = tmp_path / "config.toml"
+    config.write_text(
+        """
+[provider]
+name = "groq"
+
+[agent]
+max_history_chars = 24000
+""",
+        encoding="utf-8",
+    )
+    args = Namespace(
+        config=str(config),
+        provider=None,
+        model=None,
+        base_url=None,
+        timeout=None,
+        max_iterations=None,
+        max_output_tokens=None,
+        tool_calling=None,
+        workspace=None,
+    )
+
+    assert load_settings(args).max_history_chars == 24_000
+
+    config.write_text("[provider]\nname = \"groq\"\n", encoding="utf-8")
+    assert load_settings(args).max_history_chars == 16_000
+
+    config.write_text("[provider]\nname = \"mock\"\n", encoding="utf-8")
+    assert load_settings(args).max_history_chars == 60_000
+
+
 @pytest.mark.parametrize("provider", ("gemini", "groq", "huggingface"))
 def test_tool_capable_provider_defaults_on_and_can_be_disabled(
     tmp_path, monkeypatch, provider

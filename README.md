@@ -287,6 +287,7 @@ tool_calling = true
 
 [agent]
 max_iterations = 24
+max_history_chars = 60000
 ```
 
 The agent allows up to 24 provider request/response iterations per task by
@@ -297,6 +298,13 @@ obeys the configured overall timeout and tool-call limits. If the limit keeps
 being reached, check the transcript for repeated tool calls or a model that
 does not produce a final answer; raising the limit alone may just allow an
 unproductive loop to continue.
+
+To bound retained conversation context, the agent keeps up to 60,000
+serialized history characters by default. Groq uses a lower 16,000-character
+default to leave room for system instructions and tool definitions under
+constrained free-tier rate limits. Set `[agent] max_history_chars` to adjust
+that budget when needed; this affects context sent from prior turns, not the
+separate generated-output limit.
 
 An entire task has a 300-second timeout by default. Repository reviews and
 other larger tasks can take longer; increase the budget up to 600 seconds with
