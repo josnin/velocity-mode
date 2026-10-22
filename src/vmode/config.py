@@ -18,6 +18,13 @@ class Settings:
     workspace: Path = Path.cwd()
 
 
+def _default_workspace(path: Path) -> Path:
+    for candidate in (path, *path.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return path
+
+
 def load_settings(args: object) -> Settings:
     env = os.environ
     config_path = (
@@ -94,11 +101,12 @@ def load_settings(args: object) -> Settings:
         result.tool_calling = args.tool_calling
     if getattr(args, "max_iterations", None) is not None:
         result.max_iterations = args.max_iterations
-    result.workspace = Path(
-        getattr(args, "workspace", None) or Path.cwd()
-    ).expanduser().resolve()
+    workspace_arg = getattr(args, "workspace", None)
+    result.workspace = Path(workspace_arg or Path.cwd()).expanduser().resolve()
     if not result.workspace.is_dir():
         raise ValueError(f"Workspace is not a directory: {result.workspace}")
+    if workspace_arg is None:
+        result.workspace = _default_workspace(result.workspace)
     if not 1 <= result.timeout <= 600:
         raise ValueError("Timeout must be between 1 and 600 seconds")
     if not 1 <= result.max_iterations <= 100:

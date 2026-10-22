@@ -89,6 +89,38 @@ def test_legacy_default_config_is_used_when_new_config_is_missing(tmp_path, monk
     assert load_settings(args).model == "legacy-config-model"
 
 
+def test_workspace_defaults_to_nearest_git_root_and_honors_explicit_directory(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "project"
+    nested = project / "src" / "vmode"
+    nested.mkdir(parents=True)
+    (project / ".git").mkdir()
+    monkeypatch.chdir(nested)
+    args = Namespace(
+        config=str(tmp_path / "missing.toml"),
+        provider=None,
+        model=None,
+        base_url=None,
+        timeout=None,
+        max_iterations=None,
+        max_output_tokens=None,
+        tool_calling=None,
+        workspace=None,
+    )
+
+    assert load_settings(args).workspace == project
+
+    args.workspace = nested
+    assert load_settings(args).workspace == nested
+
+    outside_repository = tmp_path / "outside-repository"
+    outside_repository.mkdir()
+    monkeypatch.chdir(outside_repository)
+    args.workspace = None
+    assert load_settings(args).workspace == outside_repository
+
+
 @pytest.mark.parametrize("provider", ("gemini", "groq", "huggingface"))
 def test_tool_capable_provider_defaults_on_and_can_be_disabled(
     tmp_path, monkeypatch, provider

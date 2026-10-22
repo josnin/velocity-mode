@@ -45,6 +45,12 @@ The final command exercises the complete offline model → `read_file` tool →
 tool-result message → second model response cycle. The default mock only
 returns a deterministic response; it never accesses files or processes.
 
+When `--workspace` is omitted, Velocity-Mode automatically uses the nearest
+parent Git repository root. This lets you start VMode from any subdirectory of
+a project without repeating its path. Outside a Git repository, it uses the
+current directory; use `--workspace` only to intentionally select a different
+directory.
+
 ## Workspace search
 
 The `list_files` and `search_files` agent tools require
