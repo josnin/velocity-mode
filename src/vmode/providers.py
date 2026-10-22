@@ -245,6 +245,35 @@ class OpenAICompatibleProvider:
                                 raise ProviderError(
                                     f"Malformed SSE event from {self.provider_label}."
                                 )
+                            stream_error = item.get("error")
+                            if stream_error is not None:
+                                if not isinstance(stream_error, dict):
+                                    raise ProviderError(
+                                        f"Malformed error event from {self.provider_label}."
+                                    )
+                                message = stream_error.get("message")
+                                if not isinstance(message, str) or not message.strip():
+                                    raise ProviderError(
+                                        f"Malformed error event from {self.provider_label}."
+                                    )
+                                if self._token:
+                                    message = message.replace(self._token, "******")
+                                if (
+                                    stream_error.get("code") == 429
+                                    or any(
+                                        isinstance(value, str)
+                                        and "rate_limit" in value.lower()
+                                        for value in (
+                                            stream_error.get("type"),
+                                            stream_error.get("code"),
+                                        )
+                                    )
+                                    or "rate limit" in message.lower()
+                                ):
+                                    raise ProviderError("Rate limit reached.")
+                                raise ProviderError(
+                                    f"{self.provider_label} stream error: {message[:500]}"
+                                )
                             raw_usage = item.get("usage")
                             if raw_usage is not None:
                                 if not isinstance(raw_usage, dict):
@@ -370,7 +399,9 @@ class OpenAICompatibleProvider:
                             finish_reason = choice_finish or finish_reason
                     if not done_received:
                         raise ProviderError(
-                            f"{self.provider_label} stream ended before its completion marker."
+                            f"{self.provider_label} stream was interrupted before its "
+                            "completion marker; the response may be incomplete. Retry "
+                            "the request."
                         )
                     break
         except httpx.TimeoutException as exc:

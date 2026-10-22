@@ -356,11 +356,16 @@ async def test_huggingface_does_not_assume_tool_calling_support():
 
 
 @pytest.mark.asyncio
-async def test_huggingface_rejects_malformed_or_interrupted_sse_streams():
+async def test_huggingface_reports_sse_errors_and_interrupted_streams():
     valid_frame = b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
     for data, expected in (
         (b"data: []\n\ndata: [DONE]\n\n", "Malformed SSE event"),
-        (valid_frame, "ended before its completion marker"),
+        (
+            b'data: {"error":{"message":"Too many tokens",'
+            b'"code":"rate_limit_exceeded"}}\n\n',
+            "Rate limit reached",
+        ),
+        (valid_frame, "stream was interrupted before its completion marker"),
     ):
         async def handler(request, *, data=data):
             return httpx.Response(200, stream=ByteStream([data]))
