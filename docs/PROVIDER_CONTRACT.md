@@ -88,10 +88,7 @@ Official reference: [Gemini API OpenAI compatibility](https://ai.google.dev/gemi
 endpoint, `https://api.groq.com/openai/v1/chat/completions`. It reads
 `GROQ_API_KEY` at runtime and defaults tool calling on. Groq's model
 availability and free developer-tier limits are account controlled; offline
-tests verify the documented request and streaming protocol. To preserve room
-for system instructions and tool definitions under constrained free-tier rate
-limits, Groq defaults to a 16,000-character retained-history budget; users
-can override it with `[agent] max_history_chars`.
+tests verify the documented request and streaming protocol.
 
 Official references: [Groq OpenAI compatibility](https://console.groq.com/docs/openai)
 and [Groq tool use](https://console.groq.com/docs/tool-use).

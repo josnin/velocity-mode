@@ -121,6 +121,11 @@ def make_parser() -> argparse.ArgumentParser:
         help="maximum provider requests per task (default: 24; max: 100)",
     )
     parser.add_argument(
+        "--max-history-chars",
+        type=int,
+        help="maximum serialized characters retained from prior turns (default: 60000)",
+    )
+    parser.add_argument(
         "--max-output-tokens",
         type=int,
         help="maximum generated tokens per provider response (default: 4096)",

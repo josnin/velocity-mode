@@ -241,7 +241,7 @@ current shell, and select an available model:
 
 ```sh
 export GROQ_API_KEY="your_groq_api_key"
-vmode --provider groq --model "openai/gpt-oss-20b"
+vmode --provider groq --model "openai/gpt-oss-20b" --max-history-chars 16000
 ```
 
 The default endpoint is `https://api.groq.com/openai/v1`. Tool calling is
@@ -300,11 +300,10 @@ does not produce a final answer; raising the limit alone may just allow an
 unproductive loop to continue.
 
 To bound retained conversation context, the agent keeps up to 60,000
-serialized history characters by default. Groq uses a lower 16,000-character
-default to leave room for system instructions and tool definitions under
-constrained free-tier rate limits. Set `[agent] max_history_chars` to adjust
-that budget when needed; this affects context sent from prior turns, not the
-separate generated-output limit.
+serialized history characters by default. Set
+`--max-history-chars 16000` for a constrained provider invocation, or use
+`[agent] max_history_chars` to adjust the default configuration. This affects
+context sent from prior turns, not the separate generated-output limit.
 
 An entire task has a 300-second timeout by default. Repository reviews and
 other larger tasks can take longer; increase the budget up to 600 seconds with

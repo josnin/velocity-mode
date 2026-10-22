@@ -121,7 +121,7 @@ def test_workspace_defaults_to_nearest_git_root_and_honors_explicit_directory(
     assert load_settings(args).workspace == outside_repository
 
 
-def test_groq_uses_conservative_history_budget_unless_configured(tmp_path):
+def test_history_budget_uses_default_and_allows_config_or_cli_override(tmp_path):
     config = tmp_path / "config.toml"
     config.write_text(
         """
@@ -148,10 +148,13 @@ max_history_chars = 24000
     assert load_settings(args).max_history_chars == 24_000
 
     config.write_text("[provider]\nname = \"groq\"\n", encoding="utf-8")
-    assert load_settings(args).max_history_chars == 16_000
-
-    config.write_text("[provider]\nname = \"mock\"\n", encoding="utf-8")
     assert load_settings(args).max_history_chars == 60_000
+
+    args.max_history_chars = 16_000
+    assert load_settings(args).max_history_chars == 16_000
+    assert make_parser().parse_args(
+        ["--max-history-chars", "16000"]
+    ).max_history_chars == 16_000
 
 
 @pytest.mark.parametrize("provider", ("gemini", "groq", "huggingface"))

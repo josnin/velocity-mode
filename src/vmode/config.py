@@ -7,7 +7,6 @@ from pathlib import Path
 
 
 DEFAULT_MAX_HISTORY_CHARS = 60_000
-GROQ_MAX_HISTORY_CHARS = 16_000
 
 
 @dataclass(slots=True)
@@ -71,12 +70,7 @@ def load_settings(args: object) -> Settings:
         timeout=float(provider.get("timeout", 300)),
         max_iterations=int(agent.get("max_iterations", 24)),
         max_history_chars=int(
-            agent.get(
-                "max_history_chars",
-                GROQ_MAX_HISTORY_CHARS
-                if selected_provider == "groq"
-                else DEFAULT_MAX_HISTORY_CHARS,
-            )
+            agent.get("max_history_chars", DEFAULT_MAX_HISTORY_CHARS)
         ),
         max_output_tokens=int(provider.get("max_output_tokens", 4096)),
         tool_calling=file_tool_calling,
@@ -114,6 +108,8 @@ def load_settings(args: object) -> Settings:
         result.tool_calling = args.tool_calling
     if getattr(args, "max_iterations", None) is not None:
         result.max_iterations = args.max_iterations
+    if getattr(args, "max_history_chars", None) is not None:
+        result.max_history_chars = args.max_history_chars
     workspace_arg = getattr(args, "workspace", None)
     result.workspace = Path(workspace_arg or Path.cwd()).expanduser().resolve()
     if not result.workspace.is_dir():
