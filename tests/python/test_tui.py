@@ -1,6 +1,14 @@
 from pathlib import Path
 
-from vmode.tui import _TranscriptItem, _UIState, _approval_preview, _register_response
+from prompt_toolkit.document import Document
+
+from vmode.tui import (
+    _TranscriptItem,
+    _TranscriptLexer,
+    _UIState,
+    _approval_preview,
+    _register_response,
+)
 
 
 def test_edit_approval_preview_shows_targeted_diff(tmp_path: Path):
@@ -78,3 +86,22 @@ def test_incomplete_terminal_error_is_registered_as_a_selectable_response():
     assert error.response_id == 0
     assert state.selected_response == 0
     assert state.responses[0].text == error.text
+
+
+def test_transcript_lexer_distinguishes_errors_and_fenced_code():
+    document = Document(
+        "Velocity-Mode · error\n"
+        "  Error: Rate limit reached.\n"
+        "Velocity-Mode\n"
+        "  ```python\n"
+        "  print('hello')\n"
+        "  ```\n"
+        "! Error: Provider stream interrupted."
+    )
+    get_line = _TranscriptLexer().lex_document(document)
+
+    assert get_line(0)[0][0] == "class:transcript-error"
+    assert get_line(1)[0][0] == "class:transcript-error"
+    assert get_line(3)[0][0] == "class:transcript-code"
+    assert get_line(4)[0][0] == "class:transcript-code"
+    assert get_line(6)[0][0] == "class:transcript-error"

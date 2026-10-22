@@ -51,6 +51,7 @@ class _TranscriptItem:
     text: str = ""
     response_id: int | None = None
     incomplete: bool = False
+    kind: str = ""
 
 
 @dataclass
@@ -91,20 +92,48 @@ def _register_response(state: _UIState, item: _TranscriptItem) -> None:
 class _TranscriptLexer(Lexer):
     def lex_document(self, document: Document):
         lines = document.lines
+        styles: list[str] = []
+        section_style = ""
+        in_code_block = False
 
-        def get_line(index: int) -> list[tuple[str, str]]:
-            line = lines[index]
+        for line in lines:
+            stripped = line.lstrip()
+            if line.startswith(("▶ SELECTED RESPONSE ", "You", "Velocity-Mode", "! ")):
+                in_code_block = False
             if line.startswith("▶ SELECTED RESPONSE "):
+                section_style = (
+                    "class:transcript-error"
+                    if "· error" in line
+                    else "class:transcript-assistant"
+                )
                 style = "class:transcript-selected"
             elif line.startswith("You"):
-                style = "class:transcript-user"
+                section_style = "class:transcript-user"
+                style = section_style
             elif line.startswith("Velocity-Mode"):
-                style = "class:transcript-assistant"
+                section_style = (
+                    "class:transcript-error"
+                    if "· error" in line
+                    else "class:transcript-assistant"
+                )
+                style = section_style
+            elif line.startswith("! Error:") or line.startswith("! Agent failed:"):
+                section_style = "class:transcript-error"
+                style = section_style
             elif line.startswith("! "):
-                style = "class:transcript-notice"
+                section_style = "class:transcript-notice"
+                style = section_style
+            elif stripped.startswith("```"):
+                style = "class:transcript-code"
+                in_code_block = not in_code_block
+            elif in_code_block:
+                style = "class:transcript-code"
             else:
-                style = ""
-            return [(style, line)]
+                style = section_style
+            styles.append(style)
+
+        def get_line(index: int) -> list[tuple[str, str]]:
+            return [(styles[index], lines[index])]
 
         return get_line
 
@@ -208,9 +237,12 @@ async def run_tui(
                     incomplete = item.get("incomplete", False)
                     if type(incomplete) is not bool:
                         incomplete = False
+                    kind = item.get("kind", "")
+                    if kind not in {"", "error"}:
+                        kind = ""
                     state.items.append(
                         _TranscriptItem(
-                            item["role"], item["text"], response_id, incomplete
+                            item["role"], item["text"], response_id, incomplete, kind
                         )
                     )
         raw_responses = session_record.get("ui", {}).get("responses", [])
@@ -266,12 +298,16 @@ async def run_tui(
                     and item.response_id == selected_response.identifier
                 )
                 label = (
-                    "Velocity-Mode · partial"
-                    if item.incomplete
+                    "Velocity-Mode · error"
+                    if item.kind == "error"
                     else (
-                        "Velocity-Mode · working"
-                        if item.response_id is None and state.busy
-                        else "Velocity-Mode"
+                        "Velocity-Mode · partial"
+                        if item.incomplete
+                        else (
+                            "Velocity-Mode · working"
+                            if item.response_id is None and state.busy
+                            else "Velocity-Mode"
+                        )
                     )
                 )
                 if selected_label:
@@ -407,6 +443,7 @@ async def run_tui(
                     "text": item.text,
                     "response_id": item.response_id,
                     "incomplete": item.incomplete,
+                    "kind": item.kind,
                 }
                 for item in state.items
             ],
@@ -573,6 +610,7 @@ async def run_tui(
                             )
                         else:
                             assistant_item.text = f"Error: {event.text}"
+                            assistant_item.kind = "error"
                         app.invalidate()
                     elif event.kind == "done":
                         state.activities.append("Turn complete")
@@ -590,6 +628,7 @@ async def run_tui(
                 else:
                     assistant_item.text = f"Agent failed: {exc}"
                     assistant_item.incomplete = True
+                    assistant_item.kind = "error"
             finally:
                 if assistant_item.text and assistant_item.response_id is None:
                     assistant_item.incomplete = True
@@ -1141,10 +1180,12 @@ async def run_tui(
             "transcript-user": "bold #58a6ff",
             "transcript-assistant": "bold #3fb950",
             "transcript-notice": "bold #e3b341",
+            "transcript-error": "bold #f85149",
+            "transcript-code": "#d2a8ff bg:#161b22",
             "editor": "#ffffff",
             "command": "#ffffff",
             "activity": "#9da7b3",
-            "approval": "bold #e3b341",
+            "approval": "bold #e3b341 bg:#2d2412",
             "toolbar": "bg:#20242b #aab2bf",
             "mode": "bold #ffffff bg:#6e40c9",
             "transcript-selected": "bold #ffffff bg:#1f6feb",
