@@ -510,6 +510,34 @@ class GeminiProvider(OpenAICompatibleProvider):
                 yield event
 
 
+class GroqProvider(OpenAICompatibleProvider):
+    """Streaming Groq OpenAI-compatible endpoint."""
+
+    name = "groq"
+
+    def __init__(
+        self,
+        model: str,
+        base_url: str = "https://api.groq.com/openai/v1",
+        timeout: float = 60.0,
+        max_output_tokens: int = 4096,
+        supports_tool_calling: bool = True,
+        token: str | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
+        super().__init__(
+            model,
+            base_url,
+            timeout,
+            max_output_tokens,
+            supports_tool_calling,
+            token,
+            transport,
+            token_env="GROQ_API_KEY",
+            provider_label="Groq",
+        )
+
+
 class OllamaProvider(OpenAICompatibleProvider):
     """Streaming Ollama OpenAI-compatible endpoint."""
 

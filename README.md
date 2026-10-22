@@ -5,8 +5,8 @@ Author: Velocity-Mode
 Velocity-Mode (`vmode`) is a Python 3.11+ coding-agent CLI with a Vim-inspired
 terminal editor. It streams model responses and supports bounded tool calls.
 It includes Hugging Face and generic OpenAI Chat Completions-compatible
-providers, Google Gemini Developer API support, and a deterministic mock for
-offline development and tests.
+providers, Google Gemini Developer API and Groq support, and a deterministic
+mock for offline development and tests.
 
 ## Install
 
@@ -227,6 +227,22 @@ controlled by Google and can change; select a model and account configuration
 that currently qualifies for the free tier. If you set `--base-url`, use the
 API prefix ending in `/v1beta/openai`, not the full `/chat/completions` URL.
 
+## Groq
+
+Velocity-Mode supports Groq's OpenAI-compatible streaming endpoint. Create an
+API key in the [Groq Console](https://console.groq.com/keys), export it for the
+current shell, and select an available model:
+
+```sh
+export GROQ_API_KEY="your_groq_api_key"
+vmode --provider groq --model "openai/gpt-oss-20b"
+```
+
+The default endpoint is `https://api.groq.com/openai/v1`. Tool calling is
+enabled by default for Groq; model availability and free developer-tier limits
+are controlled by Groq and can change. Use `--no-tool-calling` for a minimal
+connectivity check or when a chosen model does not support tools.
+
 ## Ollama
 
 Velocity-Mode can call a local or remote Ollama server through its
@@ -297,14 +313,14 @@ Supported environment overrides are `VMODE_PROVIDER`, `VMODE_MODEL`,
 `VMODE_BASE_URL`, `VMODE_TIMEOUT`, `VMODE_MAX_OUTPUT_TOKENS`,
 `VMODE_TOOL_CALLING`, and `VMODE_CONFIG`. Hugging Face uses `HF_TOKEN`;
 Google Gemini uses `GEMINI_API_KEY`; OpenAI-compatible endpoints use
-`VMODE_API_KEY`. Credentials are only read from the environment at runtime.
-Tool calling defaults on for Gemini and Hugging Face, off for Ollama,
-OpenAI-compatible endpoints, and the default mock, and on for the mock
+`VMODE_API_KEY`; Groq uses `GROQ_API_KEY`. Credentials are only read from the
+environment at runtime. Tool calling defaults on for Gemini, Groq, and Hugging
+Face, off for Ollama, OpenAI-compatible endpoints, and the default mock, and on for the mock
 `read-file` scenario.
 Disable it with `--no-tool-calling`, `VMODE_TOOL_CALLING=false`, or `tool_calling = false` if the selected
 model/provider does not support tools.
-`HF_TOKEN`, `GEMINI_API_KEY`, and `VMODE_API_KEY` are read at runtime and are
-never accepted in TOML or CLI arguments.
+`HF_TOKEN`, `GEMINI_API_KEY`, `GROQ_API_KEY`, and `VMODE_API_KEY` are read at
+runtime and are never accepted in TOML or CLI arguments.
 The token is sent only as an HTTPS Bearer authorization header. Redirects are
 disabled, TLS verification remains enabled, and authorization headers are not
 logged. Do not place credentials in project files or commit them.

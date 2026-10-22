@@ -18,6 +18,7 @@ from .instructions import build_system_prompt
 from .protocol import AgentLimits
 from .providers import (
     GeminiProvider,
+    GroqProvider,
     HuggingFaceProvider,
     MockProvider,
     OllamaProvider,
@@ -98,7 +99,14 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"vmode {__version__}")
     parser.add_argument(
         "--provider",
-        choices=("mock", "gemini", "huggingface", "ollama", "openai-compatible"),
+        choices=(
+            "mock",
+            "gemini",
+            "groq",
+            "huggingface",
+            "ollama",
+            "openai-compatible",
+        ),
     )
     parser.add_argument("--model")
     parser.add_argument("--base-url")
@@ -187,6 +195,16 @@ def make_provider(settings: Settings, args: argparse.Namespace) -> Provider:
             settings.model,
             settings.base_url
             or "https://generativelanguage.googleapis.com/v1beta/openai",
+            settings.timeout,
+            settings.max_output_tokens,
+            supports_tool_calling=settings.tool_calling,
+        )
+    if settings.provider == "groq":
+        if settings.model == "mock/deterministic":
+            raise ValueError("Groq requires a model ID; set --model or VMODE_MODEL")
+        return GroqProvider(
+            settings.model,
+            settings.base_url or "https://api.groq.com/openai/v1",
             settings.timeout,
             settings.max_output_tokens,
             supports_tool_calling=settings.tool_calling,

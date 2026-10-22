@@ -7,6 +7,7 @@ import pytest
 from vmode.protocol import Message, ProviderError, ToolCall
 from vmode.providers import (
     GeminiProvider,
+    GroqProvider,
     HuggingFaceProvider,
     OllamaProvider,
     OpenAICompatibleProvider,
@@ -577,6 +578,50 @@ async def test_gemini_requires_dedicated_api_key():
     provider = GeminiProvider("gemini-3.8-flash", token="")
 
     with pytest.raises(ProviderError, match="GEMINI_API_KEY"):
+        async for _ in provider.stream([Message("user", "hello")], []):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_groq_uses_openai_endpoint_with_dedicated_key_and_tool_calling():
+    captured = {}
+    data = (
+        b'data: {"choices":[{"delta":{"content":"groq"},"finish_reason":"stop"}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+
+    async def handler(request):
+        captured["url"] = str(request.url)
+        captured["authorization"] = request.headers.get("authorization")
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, stream=ByteStream([data]))
+
+    provider = GroqProvider(
+        "openai/gpt-oss-20b",
+        token="groq-fake-key",
+        transport=httpx.MockTransport(handler),
+    )
+    events = [
+        event
+        async for event in provider.stream(
+            [Message("user", "hello")],
+            [{"type": "function", "function": {"name": "read_file"}}],
+        )
+    ]
+
+    assert provider.name == "groq"
+    assert provider.capabilities.tool_calling
+    assert captured["url"] == "https://api.groq.com/openai/v1/chat/completions"
+    assert captured["authorization"] == "Bearer groq-fake-key"
+    assert "tools" in captured["body"]
+    assert "".join(event.text for event in events if event.kind == "text") == "groq"
+
+
+@pytest.mark.asyncio
+async def test_groq_requires_dedicated_api_key():
+    provider = GroqProvider("openai/gpt-oss-20b", token="")
+
+    with pytest.raises(ProviderError, match="GROQ_API_KEY"):
         async for _ in provider.stream([Message("user", "hello")], []):
             pass
 

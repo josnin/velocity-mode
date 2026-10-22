@@ -89,7 +89,7 @@ def test_legacy_default_config_is_used_when_new_config_is_missing(tmp_path, monk
     assert load_settings(args).model == "legacy-config-model"
 
 
-@pytest.mark.parametrize("provider", ("gemini", "huggingface"))
+@pytest.mark.parametrize("provider", ("gemini", "groq", "huggingface"))
 def test_tool_capable_provider_defaults_on_and_can_be_disabled(
     tmp_path, monkeypatch, provider
 ):
@@ -129,6 +129,27 @@ def test_gemini_provider_uses_developer_api_defaults(tmp_path, monkeypatch):
 
     assert provider.name == "gemini"
     assert provider.base_url == "https://generativelanguage.googleapis.com/v1beta/openai"
+    assert provider.capabilities.tool_calling
+
+
+def test_groq_provider_uses_openai_compatible_defaults(tmp_path, monkeypatch):
+    monkeypatch.delenv("VMODE_PROVIDER", raising=False)
+    monkeypatch.delenv("VMODE_TOOL_CALLING", raising=False)
+    args = make_parser().parse_args(
+        [
+            "--provider",
+            "groq",
+            "--model",
+            "openai/gpt-oss-20b",
+            "--workspace",
+            str(tmp_path),
+        ]
+    )
+    settings = load_settings(args)
+    provider = make_provider(settings, args)
+
+    assert provider.name == "groq"
+    assert provider.base_url == "https://api.groq.com/openai/v1"
     assert provider.capabilities.tool_calling
 
 
