@@ -116,7 +116,11 @@ class _TranscriptLexer(Lexer):
                     if "· error" in line
                     else "class:transcript-assistant"
                 )
-                style = section_style
+                style = (
+                    section_style
+                    if "· error" in line
+                    else "class:transcript-assistant-label"
+                )
             elif line.startswith("! Error:") or line.startswith("! Agent failed:"):
                 section_style = "class:transcript-error"
                 style = section_style
@@ -1179,7 +1183,8 @@ async def run_tui(
             "transcript": "#e6e8eb",
             "transcript-user": "bold #c9d1d9",
             "transcript-assistant": "#e6e8eb",
-            "transcript-notice": "#8b949e",
+            "transcript-assistant-label": "bold #58a6ff",
+            "transcript-notice": "bold #e3b341",
             "transcript-error": "bold #f85149",
             "transcript-code": "#c9d1d9 bg:#161b22",
             "editor": "#ffffff",

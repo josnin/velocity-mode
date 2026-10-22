@@ -102,6 +102,7 @@ def test_transcript_lexer_distinguishes_errors_and_fenced_code():
 
     assert get_line(0)[0][0] == "class:transcript-error"
     assert get_line(1)[0][0] == "class:transcript-error"
+    assert get_line(2)[0][0] == "class:transcript-assistant-label"
     assert get_line(3)[0][0] == "class:transcript-code"
     assert get_line(4)[0][0] == "class:transcript-code"
     assert get_line(6)[0][0] == "class:transcript-error"
