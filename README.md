@@ -567,5 +567,6 @@ python -m pip uninstall vima
 python -m pip install -e '.[test]'
 ```
 
-See [architecture](docs/ARCHITECTURE.md), [provider contract](docs/PROVIDER_CONTRACT.md),
-[security](docs/SECURITY.md), and [roadmap](docs/ROADMAP.md).
+See the [user manual](docs/USER_MANUAL.md), [architecture](docs/ARCHITECTURE.md),
+[provider contract](docs/PROVIDER_CONTRACT.md), [security](docs/SECURITY.md),
+and [roadmap](docs/ROADMAP.md).
