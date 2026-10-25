@@ -46,6 +46,7 @@ MAX_TRANSCRIPT_CHARS = 250_000
 MAX_RESPONSES = 100
 MAX_PROMPT_VIEW_PAYLOAD_CHARS = 200_000
 MAX_COMMAND_TRANSCRIPT_CHARS = 8_000
+MAX_RENDERED_CODE_LINES = 24
 SELECTED_RESPONSE_PREFIX = "target: "
 TUI_HELP_TEXT = (
     "Vim controls:\n"
@@ -268,6 +269,50 @@ def _safe_transcript_text(text: str) -> str:
         else "\ufffd"
         for character in text
     )
+
+
+def _compact_code_blocks(text: str) -> list[str]:
+    lines = text.splitlines()
+    rendered: list[str] = []
+    index = 0
+    while index < len(lines):
+        opening = lines[index]
+        if not opening.lstrip().startswith("```"):
+            rendered.append(opening)
+            index += 1
+            continue
+
+        content_start = index + 1
+        content_end = content_start
+        while content_end < len(lines) and not lines[content_end].lstrip().startswith(
+            "```"
+        ):
+            content_end += 1
+        content = lines[content_start:content_end]
+        if len(content) <= MAX_RENDERED_CODE_LINES:
+            rendered.extend(lines[index:content_end])
+        else:
+            head_lines = MAX_RENDERED_CODE_LINES - 8
+            hidden_lines = len(content) - MAX_RENDERED_CODE_LINES
+            rendered.extend(
+                [
+                    opening,
+                    *content[:head_lines],
+                    "```",
+                    (
+                        f"[{hidden_lines} code lines hidden; full response remains "
+                        "available to copy or save]"
+                    ),
+                    opening,
+                    *content[-8:],
+                ]
+            )
+        if content_end < len(lines):
+            rendered.append(lines[content_end])
+            index = content_end + 1
+        else:
+            index = content_end
+    return rendered
 
 
 def _command_transcript_text(
@@ -503,7 +548,9 @@ async def run_tui(
                         f"{len(state.responses)} · {label}"
                     )
                 chunks.append(f"\n{label}\n")
-                chunks.extend(f"  {line}\n" for line in (item.text.splitlines() or [""]))
+                chunks.extend(
+                    f"  {line}\n" for line in (_compact_code_blocks(item.text) or [""])
+                )
             elif item.role == "notice":
                 chunks.append(f"\n! {item.text}\n")
             elif item.role == "tool":

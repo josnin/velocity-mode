@@ -5,6 +5,7 @@ from prompt_toolkit.document import Document
 from vmode.tui import (
     MAX_COMMAND_TRANSCRIPT_CHARS,
     MAX_PROMPT_VIEW_PAYLOAD_CHARS,
+    MAX_RENDERED_CODE_LINES,
     SELECTED_RESPONSE_PREFIX,
     TUI_HELP_TEXT,
     TUI_STYLE_RULES,
@@ -14,6 +15,7 @@ from vmode.tui import (
     _UIState,
     _approval_preview,
     _command_transcript_text,
+    _compact_code_blocks,
     _safe_transcript_text,
     _prompt_view_text,
     _provider_switch_notice,
@@ -199,3 +201,19 @@ def test_command_transcript_text_sanitizes_control_characters_and_caps_output():
     assert "\x1b" not in rendered
     assert rendered.endswith("[display truncated]")
     assert _safe_transcript_text("line\rnext") == "line�next"
+
+
+def test_compact_code_blocks_preserves_small_blocks_and_compacts_large_ones():
+    small = "Before\n```python\nprint('ok')\n```\nAfter"
+    assert _compact_code_blocks(small) == small.splitlines()
+
+    code = "\n".join(f"line {index}" for index in range(MAX_RENDERED_CODE_LINES + 6))
+    rendered = _compact_code_blocks(f"```python\n{code}\n```\nAfter")
+
+    assert rendered.count("```python") == 2
+    assert rendered.count("```") == 2
+    assert "line 0" in rendered
+    assert f"line {MAX_RENDERED_CODE_LINES + 5}" in rendered
+    assert f"line {MAX_RENDERED_CODE_LINES - 7}" not in rendered
+    assert "[6 code lines hidden; full response remains available to copy or save]" in rendered
+    assert rendered[-1] == "After"
