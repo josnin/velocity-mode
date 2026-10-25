@@ -93,7 +93,11 @@ def test_normal_motions_and_response_copy_in_terminal(tmp_path: Path):
         assert snapshots[0]["payload"].startswith('{"model":"mock/deterministic"')
         assert "Authorization" not in snapshots[0]["payload"]
         output.clear()
-        os.write(fd, b":prompt\r")
+        os.write(fd, b"\t:s\r")
+        time.sleep(0.2)
+        record = store.load(session_id)
+        assert len(record["ui"]["responses"]) == 1
+        os.write(fd, b"\x1b")
         assert wait_for(b"Mock response: ab"), bytes(output)
 
         output.clear()

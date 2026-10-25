@@ -52,7 +52,8 @@ TUI_HELP_TEXT = (
     "  Tab switch prompt/results · Ctrl+D half-page down in results\n"
     "  / search results · n/N repeat · v/V select · y copy\n"
     "Prompt:\n"
-    "  Ctrl+S send · Enter newline · @ insert file reference\n"
+    "  Ctrl+S send · Enter newline · @ insert file reference · "
+    "Esc leave prompt inspection\n"
     "Commands:\n"
     "  :status · :usage · :cancel · :results · :prompt · :w <file> · "
     ":clear · :q"
@@ -492,7 +493,7 @@ async def run_tui(
         if state.pending_approval:
             hint = "Approval pending · y allow · n deny · Ctrl+C cancel"
         elif state.show_prompt:
-            hint = "Prompt · [/] request · :prompt return · y copy · :w save"
+            hint = "Prompt · [/] request · Esc return · y copy · :w save"
         elif app.layout.has_focus(transcript):
             if state.busy:
                 hint = "Task running · :cancel · Tab prompt"
@@ -719,8 +720,14 @@ async def run_tui(
         app.vi_state.input_mode = app.vi_state.input_mode.__class__.NAVIGATION
         refresh_selection_marker(app)
 
+    def close_prompt_view(app: Application) -> None:
+        state.show_prompt = False
+        refresh_selection_marker(app)
+
     def start_agent(prompt: str, app: Application) -> None:
         nonlocal active_task
+        if state.show_prompt:
+            return
         cleaned = prompt.strip()
         if not cleaned:
             add_notice("Prompt is empty; enter a task before submitting.")
@@ -907,7 +914,10 @@ async def run_tui(
         event.app.layout.focus(editor)
         event.app.vi_state.input_mode = event.app.vi_state.input_mode.__class__.NAVIGATION
         handle_command(command, event.app)
-        if not event.app.is_done and not event.app.layout.has_focus(transcript):
+        if state.show_prompt:
+            event.app.layout.focus(transcript)
+            event.app.vi_state.input_mode = event.app.vi_state.input_mode.__class__.NAVIGATION
+        elif not event.app.is_done and not event.app.layout.has_focus(transcript):
             focus_editor(event.app)
 
     def apply_response_search(
@@ -1052,7 +1062,20 @@ async def run_tui(
     @bindings.add("tab", filter=in_transcript, eager=True)
     @bindings.add("c-i", filter=in_transcript, eager=True)
     def return_to_editor(event) -> None:
-        focus_editor(event.app)
+        if not state.show_prompt:
+            focus_editor(event.app)
+
+    @bindings.add(
+        "escape",
+        filter=Condition(
+            lambda: in_transcript()
+            and state.show_prompt
+            and transcript.buffer.selection_state is None
+        ),
+        eager=True,
+    )
+    def close_prompt_inspection(event) -> None:
+        close_prompt_view(event.app)
 
     @bindings.add("[", filter=in_transcript, eager=True)
     def previous_response(event) -> None:
