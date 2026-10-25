@@ -34,6 +34,32 @@ def write_skill(
     return path
 
 
+def write_project_skill(
+    workspace: Path,
+    identifier: str,
+    *,
+    version: str = "1.0.0",
+    tags: tuple[str, ...] = (),
+    triggers: tuple[str, ...] = (),
+    content: str = "Use the project helper.",
+) -> Path:
+    directory = workspace / "skills" / identifier
+    directory.mkdir(parents=True)
+    path = directory / "SKILL.md"
+    path.write_text(
+        "+++\n"
+        f'id = "{identifier}"\n'
+        f'version = "{version}"\n'
+        'description = "Test skill"\n'
+        f"tags = {list(tags)!r}\n"
+        f"triggers = {list(triggers)!r}\n"
+        "+++\n"
+        f"{content}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 @pytest.mark.asyncio
 async def test_catalog_selects_an_unambiguous_deterministic_match(tmp_path: Path):
     write_skill(tmp_path, "python-tests", tags=("python", "pytest"))
@@ -46,6 +72,26 @@ async def test_catalog_selects_an_unambiguous_deterministic_match(tmp_path: Path
     selected = await SkillCatalog(tmp_path).select("Run the pytest suite", UnusedProvider())
     assert selected.source == "deterministic"
     assert [skill.identifier for skill in selected.skills] == ["python-tests"]
+
+
+@pytest.mark.asyncio
+async def test_catalog_loads_nested_project_skills(tmp_path: Path):
+    path = write_project_skill(
+        tmp_path,
+        "agentic-cli-engineering",
+        tags=("agentic", "cli"),
+        triggers=("agent",),
+    )
+
+    class UnusedProvider:
+        async def stream(self, messages, tools):
+            raise AssertionError("unambiguous matching must not select with the model")
+            yield
+
+    selected = await SkillCatalog(tmp_path).select("Improve the coding agent CLI", UnusedProvider())
+    assert selected.source == "deterministic"
+    assert [skill.identifier for skill in selected.skills] == ["agentic-cli-engineering"]
+    assert path.exists()
 
 
 @pytest.mark.asyncio
@@ -102,6 +148,17 @@ def test_catalog_rejects_a_symlinked_skill_container(tmp_path: Path):
     external.mkdir()
     (tmp_path / ".vmode").symlink_to(external, target_is_directory=True)
     with pytest.raises(ValueError, match="Skill container"):
+        SkillCatalog(tmp_path).load()
+
+
+def test_catalog_rejects_a_symlinked_nested_project_skill_directory(tmp_path: Path):
+    directory = tmp_path / "skills"
+    directory.mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    (external / "SKILL.md").write_text("+++\n+++\ntext\n", encoding="utf-8")
+    (directory / "linked").symlink_to(external, target_is_directory=True)
+    with pytest.raises(ValueError, match="Project skill directory linked"):
         SkillCatalog(tmp_path).load()
 
 

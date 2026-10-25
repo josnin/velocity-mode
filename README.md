@@ -449,8 +449,9 @@ or conventions that apply to all tasks, not for task-specific procedures:
 
 ## Selectable workspace skills
 
-Optional task-specific skills live in `.vmode/skills/*.md`. A skill uses TOML
-front matter followed by its guidance. For example, create
+Optional task-specific skills live in either `.vmode/skills/*.md` or the
+project-visible `skills/<skill-id>/SKILL.md` layout. A skill uses TOML front
+matter followed by its guidance. For example, create
 `.vmode/skills/python-tests.md`:
 
 ```markdown

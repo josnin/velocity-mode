@@ -64,28 +64,10 @@ class SkillCatalog:
         self.workspace = workspace.resolve()
         self.container = self.workspace / ".vmode"
         self.root = self.container / "skills"
+        self.project_root = self.workspace / "skills"
 
     def load(self) -> tuple[Skill, ...]:
-        try:
-            container = self.container.lstat()
-        except FileNotFoundError:
-            return ()
-        except OSError as exc:
-            raise ValueError(f"Cannot inspect skill directory {self.root}: {exc}") from exc
-        if stat.S_ISLNK(container.st_mode) or not stat.S_ISDIR(container.st_mode):
-            raise ValueError(f"Skill container {self.container} must be a directory, not a symlink.")
-        try:
-            directory = self.root.lstat()
-        except FileNotFoundError:
-            return ()
-        except OSError as exc:
-            raise ValueError(f"Cannot inspect skill directory {self.root}: {exc}") from exc
-        if stat.S_ISLNK(directory.st_mode) or not stat.S_ISDIR(directory.st_mode):
-            raise ValueError(f"Skill directory {self.root} must be a directory, not a symlink.")
-        try:
-            paths = sorted(self.root.glob("*.md"))
-        except OSError as exc:
-            raise ValueError(f"Cannot list skill directory {self.root}: {exc}") from exc
+        paths = self._legacy_paths() + self._project_paths()
         if len(paths) > MAX_SKILL_FILES:
             raise ValueError(f"Skill directory exceeds {MAX_SKILL_FILES} skill files.")
         skills = []
@@ -101,6 +83,62 @@ class SkillCatalog:
             identifiers.add(skill.identifier)
             skills.append(skill)
         return tuple(skills)
+
+    def _legacy_paths(self) -> list[Path]:
+        try:
+            container = self.container.lstat()
+        except FileNotFoundError:
+            return []
+        except OSError as exc:
+            raise ValueError(f"Cannot inspect skill directory {self.root}: {exc}") from exc
+        if stat.S_ISLNK(container.st_mode) or not stat.S_ISDIR(container.st_mode):
+            raise ValueError(f"Skill container {self.container} must be a directory, not a symlink.")
+        try:
+            directory = self.root.lstat()
+        except FileNotFoundError:
+            return []
+        except OSError as exc:
+            raise ValueError(f"Cannot inspect skill directory {self.root}: {exc}") from exc
+        if stat.S_ISLNK(directory.st_mode) or not stat.S_ISDIR(directory.st_mode):
+            raise ValueError(f"Skill directory {self.root} must be a directory, not a symlink.")
+        try:
+            return sorted(self.root.glob("*.md"))
+        except OSError as exc:
+            raise ValueError(f"Cannot list skill directory {self.root}: {exc}") from exc
+
+    def _project_paths(self) -> list[Path]:
+        try:
+            directory = self.project_root.lstat()
+        except FileNotFoundError:
+            return []
+        except OSError as exc:
+            raise ValueError(
+                f"Cannot inspect project skill directory {self.project_root}: {exc}"
+            ) from exc
+        if stat.S_ISLNK(directory.st_mode) or not stat.S_ISDIR(directory.st_mode):
+            raise ValueError(
+                f"Project skill directory {self.project_root} must be a directory, not a symlink."
+            )
+        try:
+            entries = sorted(self.project_root.iterdir())
+        except OSError as exc:
+            raise ValueError(
+                f"Cannot list project skill directory {self.project_root}: {exc}"
+            ) from exc
+        paths = []
+        for entry in entries:
+            try:
+                metadata = entry.lstat()
+            except OSError as exc:
+                raise ValueError(f"Cannot inspect project skill {entry.name}: {exc}") from exc
+            if stat.S_ISLNK(metadata.st_mode):
+                raise ValueError(f"Project skill directory {entry.name} must not be a symlink.")
+            if not stat.S_ISDIR(metadata.st_mode):
+                continue
+            path = entry / "SKILL.md"
+            if path.exists():
+                paths.append(path)
+        return paths
 
     async def select(self, task: str, provider: SkillSelector) -> SelectedSkills:
         skills = self.load()
