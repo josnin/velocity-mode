@@ -41,6 +41,52 @@ Hugging Face uses `HF_TOKEN`; generic compatible endpoints use
 `VMODE_API_KEY`; Ollama does not require an API key. See the provider sections
 in the [README](../README.md) for supported endpoints and examples.
 
+### Generic inference APIs
+
+The named providers are convenient defaults, not the only supported hosted
+services. Use `openai-compatible` for an API that documents **streaming OpenAI
+Chat Completions compatibility**:
+
+```sh
+export VMODE_API_KEY="..."
+vmode --provider openai-compatible \
+  --base-url https://api.example.com/v1 \
+  --model vendor/model
+```
+
+This is not a universal adapter for every inference API. APIs using another
+protocol, including the OpenAI Responses API or a provider-specific endpoint,
+are not supported unless they expose the required streaming Chat Completions
+interface. Tool calling also depends on the selected endpoint and model.
+
+VMode does not charge for the CLI itself or estimate provider costs. A local
+Ollama server may avoid hosted inference charges, while hosted free tiers,
+quotas, availability, and billing remain provider/account controlled.
+
+## Configure defaults
+
+Put reusable non-secret settings in `~/.config/vmode/config.toml`, or point to
+another file with `VMODE_CONFIG`:
+
+```toml
+[provider]
+name = "groq"
+model = "openai/gpt-oss-20b"
+timeout = 300
+max_output_tokens = 4096
+tool_calling = true
+
+[agent]
+max_iterations = 24
+max_history_chars = 16000
+```
+
+CLI options override environment variables; environment variables override
+TOML; TOML overrides built-in defaults. Use `VMODE_PROVIDER`, `VMODE_MODEL`,
+`VMODE_BASE_URL`, `VMODE_TIMEOUT`, `VMODE_MAX_OUTPUT_TOKENS`, and
+`VMODE_TOOL_CALLING` for shell-level overrides. Keep API keys in their
+provider environment variables, never in TOML or on the command line.
+
 While no task is running, change provider/model without losing the current
 conversation:
 
@@ -80,6 +126,12 @@ remove retained history from the next request.
 inspection, `[` and `]` select request snapshots for the chosen result. The
 view is read-only: opening, searching, copying, or saving it does not submit a
 request or execute a tool.
+
+To understand what VMode sent for a selected response, press `Tab`, select the
+response with `[` or `]`, then run `:prompt`. The view displays VMode's locally
+captured serialized request and can be copied or saved. It excludes
+authorization headers and is not the provider's private/internal prompt or a
+claim about provider-side transformations.
 
 During an approved command, the transcript shows one compact command entry:
 the argv and `running…` state are replaced by the bounded final exit result.

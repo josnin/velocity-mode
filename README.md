@@ -9,6 +9,10 @@ approvals in one restrained terminal interface. It includes Hugging Face,
 Gemini, Groq, Ollama, and documented OpenAI Chat Completions-compatible
 providers, plus a deterministic mock for offline development and tests.
 
+**New to VMode?** Read the concise [user manual](docs/USER_MANUAL.md) for
+everyday setup, provider switching, sessions, prompt inspection, and Vim
+controls.
+
 ## Why Velocity-Mode
 
 - **Vim-like, minimalist interaction.** Edit prompts in INSERT/NORMAL modes,
