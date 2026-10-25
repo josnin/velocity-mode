@@ -16,9 +16,11 @@ from vmode.tui import (
     _command_transcript_text,
     _safe_transcript_text,
     _prompt_view_text,
+    _provider_switch_notice,
     _register_response,
 )
 from vmode.protocol import RequestSnapshot
+from vmode.providers import OpenRouterProvider
 
 
 def test_edit_approval_preview_shows_targeted_diff(tmp_path: Path):
@@ -141,6 +143,15 @@ def test_tui_help_collects_vim_controls_and_commands():
     assert ":prompt" in TUI_HELP_TEXT
     assert ":provider <name> <model> [url]" in TUI_HELP_TEXT
     assert ":w <file>" in TUI_HELP_TEXT
+
+
+def test_openrouter_switch_notice_explains_disabled_tool_calling():
+    disabled = OpenRouterProvider("provider/model")
+    enabled = OpenRouterProvider("provider/model", supports_tool_calling=True)
+
+    assert "Tool calling is off" in _provider_switch_notice(disabled)
+    assert "--tool-calling" in _provider_switch_notice(disabled)
+    assert "Tool calling is off" not in _provider_switch_notice(enabled)
 
 
 def test_prompt_view_selects_one_pretty_printed_request_without_mutation():

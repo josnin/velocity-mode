@@ -124,6 +124,19 @@ class _UIState:
     selected_request_snapshot: int = 0
 
 
+def _provider_switch_notice(provider: Provider) -> str:
+    notice = (
+        f"Switched provider to {provider.name}/{provider.model}; "
+        "conversation history retained."
+    )
+    if provider.name == "openrouter" and not provider.capabilities.tool_calling:
+        notice += (
+            " Tool calling is off; restart with --tool-calling only when the "
+            "selected model and route support tools."
+        )
+    return notice
+
+
 def _register_response(state: _UIState, item: _TranscriptItem) -> None:
     if not item.text or item.response_id is not None:
         return
@@ -1378,10 +1391,7 @@ async def run_tui(
                     agent.request_count = previous_requests
                     agent.tool_call_count = previous_tool_calls
                     state.latest_usage = None
-                    add_notice(
-                        f"Switched provider to {provider.name}/{provider.model}; "
-                        "conversation history retained."
-                    )
+                    add_notice(_provider_switch_notice(provider))
         elif name == "s":
             if arguments:
                 add_notice("Usage: :s")

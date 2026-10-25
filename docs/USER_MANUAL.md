@@ -102,6 +102,12 @@ The optional endpoint is saved with the session, but credentials are not.
 Switching affects later requests only: it does not cancel an active request or
 remove retained history from the next request.
 
+OpenRouter tool calling is off by default because model-route support varies.
+To use VMode's workspace tools after switching to OpenRouter, start VMode with
+`--tool-calling` (or set `VMODE_TOOL_CALLING=true`) before switching, and do so
+only when the selected model and route document compatible tool support. VMode
+shows a reminder after an OpenRouter switch if tool calling is off.
+
 ## Prompt and results
 
 | Action | Key or command |

@@ -254,8 +254,10 @@ vmode --provider openrouter \
 Choose a current model slug from the [OpenRouter model catalog](https://openrouter.ai/models).
 Free-model availability, rate limits, tool support, and billing are controlled
 by OpenRouter and the selected upstream model. Enable `--tool-calling` only
-when that route documents compatible tool support. In an idle interactive
-session, switch directly with `:provider openrouter provider/model`.
+when that route documents compatible tool support. Tool calling is off by
+default for OpenRouter. Start VMode with `--tool-calling` before switching
+providers if the selected route supports tools. In an idle interactive session,
+switch directly with `:provider openrouter provider/model`.
 
 The endpoint base URL is the API prefix (typically ending in `/v1`);
 Velocity-Mode appends `/chat/completions`. The adapter sends a bearer
