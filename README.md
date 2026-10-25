@@ -33,17 +33,24 @@ Velocity-Mode reduces avoidable context growth; it does **not** claim a fixed
 token or cost saving because tokenization, provider-side caching, and billing
 are provider/model specific.
 
-- Only explicit `@path` references are attached; it does not send the whole
-  repository by default.
-- File search results and tool output are bounded before returning to the
-  model. Previous history is kept as complete turns, capped by default at four
-  turns and 60,000 serialized characters.
-- Task skills are selected from metadata rather than all being injected, and
-  the selected content is frozen for that task.
-- System instructions and tool schemas remain stable across turns, which may
-  allow prefix caching on providers that support it. `:usage` shows
-  provider-reported cached-input tokens when available, but does not infer a
-  cache hit or monetary saving.
+| Control | Current default | What it means |
+| --- | --- | --- |
+| Prior conversation input | 4 complete turns; 60,000 serialized characters | Older whole turns are removed before a new task. `--max-history-chars` can lower or raise the character budget. |
+| Current input | No universal token cap | The system prompt, current task, selected skills, explicit `@` files, tool schemas, and retained history still must fit the selected provider/model context window. VMode cannot reliably convert this to tokens for every provider. |
+| Model output | 4,096 tokens | Sent as `max_tokens`; change it with `--max-output-tokens` or configuration. The provider/model can enforce a lower limit. |
+| Streamed response safety limit | 1,000,000 characters | Stops unexpectedly large streamed model output even if the provider does not honor the output-token request. |
+| Tool result sent back to the model | 100,000 characters | Bounds one tool result in the next model request; command/search/file tools have their own bounded output. |
+| Provider requests per task | 24 | Bounds model → tool → model loops; configurable up to 100 with `--max-iterations`. |
+| Tool calls per task / response | 32 / 8 | Stops excessive tool-call loops. |
+| Task timeout / approved command timeout | 300 seconds / 60 seconds | The task timeout is configurable up to 600 seconds; command duration remains separately bounded. |
+
+Only explicit `@path` references are attached; VMode does not send the whole
+repository by default. File search results are bounded, and task skills are
+selected from metadata rather than all being injected; selected skill contents
+are frozen for that task. System instructions and tool schemas remain stable
+across turns, which may allow prefix caching on providers that support it.
+`:usage` shows provider-reported cached-input tokens when available, but does
+not infer a cache hit or monetary saving.
 
 Provider switching starts subsequent requests with the selected provider; it
 does not cancel an active request or eliminate the retained history from the
