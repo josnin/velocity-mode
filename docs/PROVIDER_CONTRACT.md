@@ -92,3 +92,12 @@ tests verify the documented request and streaming protocol.
 
 Official references: [Groq OpenAI compatibility](https://console.groq.com/docs/openai)
 and [Groq tool use](https://console.groq.com/docs/tool-use).
+
+## OpenRouter
+
+`OpenRouterProvider` uses OpenRouter's OpenAI-compatible streaming Chat
+Completions endpoint, `https://openrouter.ai/api/v1/chat/completions`. It
+reads `OPENROUTER_API_KEY` at runtime and defaults tool calling off because
+support varies by routed model. Offline tests verify its request and streaming
+protocol; model availability, free-tier limits, tool support, and billing are
+controlled by OpenRouter and the selected upstream model.

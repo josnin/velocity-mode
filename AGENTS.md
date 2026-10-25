@@ -65,11 +65,12 @@ independently testable changes and coordinate before editing shared interfaces.
 
 ## Providers, tools, and tests
 
-The supported adapters are `mock`, `huggingface`, `gemini`, `groq`, `ollama`,
-and documented OpenAI Chat-Completions-compatible endpoints. Their streaming,
-tool-call, usage, model, and cache behavior differs; validate capability
-assumptions and use the mock/injected transports for ordinary tests. Do not
-assume compatibility means universal protocol support or a cache discount.
+The supported adapters are `mock`, `huggingface`, `gemini`, `groq`,
+`openrouter`, `ollama`, and documented OpenAI Chat-Completions-compatible
+endpoints. Their streaming, tool-call, usage, model, and cache behavior
+differs; validate capability assumptions and use the mock/injected transports
+for ordinary tests. Do not assume compatibility means universal protocol
+support or a cache discount.
 
 Tools are allowlisted and tool-call/result IDs remain paired in history. Keep
 schemas narrow and validate malformed input. `rg` is required for file listing

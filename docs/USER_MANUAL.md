@@ -37,9 +37,10 @@ export GROQ_API_KEY="..."
 vmode --provider groq --model openai/gpt-oss-20b --max-history-chars 16000
 ```
 
-Hugging Face uses `HF_TOKEN`; generic compatible endpoints use
-`VMODE_API_KEY`; Ollama does not require an API key. See the provider sections
-in the [README](../README.md) for supported endpoints and examples.
+Hugging Face uses `HF_TOKEN`; Groq uses `GROQ_API_KEY`; OpenRouter uses
+`OPENROUTER_API_KEY`; generic compatible endpoints use `VMODE_API_KEY`; Ollama
+does not require an API key. See the provider sections in the
+[README](../README.md) for supported endpoints and examples.
 
 ### Generic inference APIs
 
@@ -93,6 +94,7 @@ conversation:
 ```text
 :provider gemini gemini-3.8-flash
 :provider groq openai/gpt-oss-20b
+:provider openrouter provider/model
 :provider openai-compatible vendor/model https://api.example.com/v1
 ```
 

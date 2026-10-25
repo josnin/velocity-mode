@@ -6,8 +6,9 @@ Velocity-Mode (`vmode`) is a Python 3.11+ coding-agent CLI for people who
 prefer a keyboard-first, Vim-inspired terminal workflow. It streams model
 responses, supports bounded tool calls, and keeps the prompt, results, and
 approvals in one restrained terminal interface. It includes Hugging Face,
-Gemini, Groq, Ollama, and documented OpenAI Chat Completions-compatible
-providers, plus a deterministic mock for offline development and tests.
+Gemini, Groq, OpenRouter, Ollama, and documented OpenAI Chat
+Completions-compatible providers, plus a deterministic mock for offline
+development and tests.
 
 **New to VMode?** Read the concise [user manual](docs/USER_MANUAL.md) for
 everyday setup, provider switching, sessions, prompt inspection, and Vim
@@ -239,22 +240,22 @@ vmode --provider openai-compatible \
   --model "your-model-id"
 ```
 
-### OpenRouter
+## OpenRouter
 
-[OpenRouter](https://openrouter.ai/) exposes a streaming OpenAI Chat
-Completions-compatible endpoint, so it works through the generic adapter:
+[OpenRouter](https://openrouter.ai/) has a dedicated adapter using its
+streaming OpenAI Chat Completions-compatible endpoint:
 
 ```sh
-export VMODE_API_KEY="your_openrouter_api_key"
-vmode --provider openai-compatible \
-  --base-url "https://openrouter.ai/api/v1" \
+export OPENROUTER_API_KEY="your_openrouter_api_key"
+vmode --provider openrouter \
   --model "provider/model"
 ```
 
 Choose a current model slug from the [OpenRouter model catalog](https://openrouter.ai/models).
 Free-model availability, rate limits, tool support, and billing are controlled
 by OpenRouter and the selected upstream model. Enable `--tool-calling` only
-when that route documents compatible tool support.
+when that route documents compatible tool support. In an idle interactive
+session, switch directly with `:provider openrouter provider/model`.
 
 The endpoint base URL is the API prefix (typically ending in `/v1`);
 Velocity-Mode appends `/chat/completions`. The adapter sends a bearer

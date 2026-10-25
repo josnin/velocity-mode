@@ -11,6 +11,7 @@ from vmode.providers import (
     HuggingFaceProvider,
     OllamaProvider,
     OpenAICompatibleProvider,
+    OpenRouterProvider,
     _sse_data,
 )
 
@@ -634,6 +635,47 @@ async def test_groq_requires_dedicated_api_key():
     provider = GroqProvider("openai/gpt-oss-20b", token="")
 
     with pytest.raises(ProviderError, match="GROQ_API_KEY"):
+        async for _ in provider.stream([Message("user", "hello")], []):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_openrouter_uses_dedicated_key_and_default_endpoint():
+    captured = {}
+    data = (
+        b'data: {"choices":[{"delta":{"content":"router"},"finish_reason":"stop"}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+
+    async def handler(request):
+        captured["url"] = str(request.url)
+        captured["authorization"] = request.headers.get("authorization")
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, stream=ByteStream([data]))
+
+    provider = OpenRouterProvider(
+        "provider/model",
+        token="openrouter-fake-key",
+        transport=httpx.MockTransport(handler),
+    )
+    events = [
+        event
+        async for event in provider.stream([Message("user", "hello")], [])
+    ]
+
+    assert provider.name == "openrouter"
+    assert not provider.capabilities.tool_calling
+    assert captured["url"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert captured["authorization"] == f"Bearer {provider._token}"
+    assert "tools" not in captured["body"]
+    assert "".join(event.text for event in events if event.kind == "text") == "router"
+
+
+@pytest.mark.asyncio
+async def test_openrouter_requires_dedicated_api_key():
+    provider = OpenRouterProvider("provider/model", token="")
+
+    with pytest.raises(ProviderError, match="OPENROUTER_API_KEY"):
         async for _ in provider.stream([Message("user", "hello")], []):
             pass
 

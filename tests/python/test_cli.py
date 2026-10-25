@@ -222,6 +222,27 @@ def test_groq_provider_uses_openai_compatible_defaults(tmp_path, monkeypatch):
     assert provider.capabilities.tool_calling
 
 
+def test_openrouter_provider_uses_dedicated_default_endpoint(tmp_path, monkeypatch):
+    monkeypatch.delenv("VMODE_TOOL_CALLING", raising=False)
+    monkeypatch.delenv("VIMA_TOOL_CALLING", raising=False)
+    args = make_parser().parse_args(
+        [
+            "--provider",
+            "openrouter",
+            "--model",
+            "provider/model",
+            "--workspace",
+            str(tmp_path),
+        ]
+    )
+    settings = load_settings(args)
+    provider = make_provider(settings, args)
+
+    assert provider.name == "openrouter"
+    assert provider.base_url == "https://openrouter.ai/api/v1"
+    assert not provider.capabilities.tool_calling
+
+
 def test_resumed_huggingface_session_restores_tool_calling_default(tmp_path, monkeypatch):
     monkeypatch.delenv("VMODE_PROVIDER", raising=False)
     monkeypatch.delenv("VMODE_TOOL_CALLING", raising=False)
@@ -350,6 +371,15 @@ def test_session_provider_switch_uses_provider_defaults_and_explicit_endpoint(
     assert not switched.tool_calling
     assert provider.name == "openai-compatible"
     assert provider.base_url == "https://api.example.test/v1"
+
+    switched, provider = make_session_provider(
+        switched, args, "openrouter", "provider/model"
+    )
+
+    assert switched.base_url == ""
+    assert not switched.tool_calling
+    assert provider.name == "openrouter"
+    assert provider.base_url == "https://openrouter.ai/api/v1"
 
     with pytest.raises(ValueError, match="must not contain credentials"):
         make_session_provider(

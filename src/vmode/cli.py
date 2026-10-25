@@ -24,6 +24,7 @@ from .providers import (
     MockProvider,
     OllamaProvider,
     OpenAICompatibleProvider,
+    OpenRouterProvider,
     Provider,
 )
 from .sessions import SessionStore, validate_session_base_url
@@ -109,6 +110,7 @@ def make_parser() -> argparse.ArgumentParser:
             "huggingface",
             "ollama",
             "openai-compatible",
+            "openrouter",
         ),
     )
     parser.add_argument("--model")
@@ -213,6 +215,18 @@ def make_provider(settings: Settings, args: argparse.Namespace) -> Provider:
         return GroqProvider(
             settings.model,
             settings.base_url or "https://api.groq.com/openai/v1",
+            settings.timeout,
+            settings.max_output_tokens,
+            supports_tool_calling=settings.tool_calling,
+        )
+    if settings.provider == "openrouter":
+        if settings.model == "mock/deterministic":
+            raise ValueError(
+                "OpenRouter requires a model ID; set --model or VMODE_MODEL"
+            )
+        return OpenRouterProvider(
+            settings.model,
+            settings.base_url or "https://openrouter.ai/api/v1",
             settings.timeout,
             settings.max_output_tokens,
             supports_tool_calling=settings.tool_calling,
