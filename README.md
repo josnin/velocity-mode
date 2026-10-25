@@ -239,6 +239,23 @@ vmode --provider openai-compatible \
   --model "your-model-id"
 ```
 
+### OpenRouter
+
+[OpenRouter](https://openrouter.ai/) exposes a streaming OpenAI Chat
+Completions-compatible endpoint, so it works through the generic adapter:
+
+```sh
+export VMODE_API_KEY="your_openrouter_api_key"
+vmode --provider openai-compatible \
+  --base-url "https://openrouter.ai/api/v1" \
+  --model "provider/model"
+```
+
+Choose a current model slug from the [OpenRouter model catalog](https://openrouter.ai/models).
+Free-model availability, rate limits, tool support, and billing are controlled
+by OpenRouter and the selected upstream model. Enable `--tool-calling` only
+when that route documents compatible tool support.
+
 The endpoint base URL is the API prefix (typically ending in `/v1`);
 Velocity-Mode appends `/chat/completions`. The adapter sends a bearer
 authorization header, requests SSE streaming, and parses common OpenAI Chat
