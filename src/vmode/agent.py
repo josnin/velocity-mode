@@ -171,6 +171,13 @@ class Agent:
                 run_tool_calls += 1
                 self.tool_call_count += 1
                 yield AgentEvent("activity", f"Running {call.name}")
+                yield AgentEvent(
+                    "tool",
+                    tool_call_id=call.id,
+                    tool_name=call.name,
+                    tool_arguments=call.arguments,
+                )
+                approved = True
                 try:
                     remaining = self.limits.timeout_seconds - (
                         time.monotonic() - started
@@ -180,22 +187,37 @@ class Agent:
                     async with asyncio.timeout(remaining):
                         result = await self.tools.invoke(call.name, call.arguments)
                 except TimeoutError:
+                    yield AgentEvent(
+                        "tool",
+                        tool_call_id=call.id,
+                        tool_name=call.name,
+                        tool_arguments=call.arguments,
+                        tool_result="Tool timed out.",
+                    )
                     yield AgentEvent("error", "Agent execution time limit reached.")
                     return
                 except (ToolError, OSError) as exc:
                     content = f"Tool error: {exc}"
                 else:
                     content = result.content[: self.limits.max_tool_output_chars]
-                    if not result.approved:
-                        self.history.append(
-                            Message("tool", content, tool_call_id=call.id, name=call.name)
-                        )
-                        yield AgentEvent(
-                            "error",
-                            f"Approval required for {call.name}; operation denied and agent stopped.",
-                        )
-                        yield AgentEvent("done")
-                        return
+                    approved = result.approved
+                yield AgentEvent(
+                    "tool",
+                    tool_call_id=call.id,
+                    tool_name=call.name,
+                    tool_arguments=call.arguments,
+                    tool_result=content,
+                )
+                if not approved:
+                    self.history.append(
+                        Message("tool", content, tool_call_id=call.id, name=call.name)
+                    )
+                    yield AgentEvent(
+                        "error",
+                        f"Approval required for {call.name}; operation denied and agent stopped.",
+                    )
+                    yield AgentEvent("done")
+                    return
                 self.history.append(
                     Message("tool", content, tool_call_id=call.id, name=call.name)
                 )

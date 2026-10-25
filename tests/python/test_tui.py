@@ -3,6 +3,7 @@ from pathlib import Path
 from prompt_toolkit.document import Document
 
 from vmode.tui import (
+    MAX_COMMAND_TRANSCRIPT_CHARS,
     MAX_PROMPT_VIEW_PAYLOAD_CHARS,
     SELECTED_RESPONSE_PREFIX,
     TUI_HELP_TEXT,
@@ -12,6 +13,8 @@ from vmode.tui import (
     _Response,
     _UIState,
     _approval_preview,
+    _command_transcript_text,
+    _safe_transcript_text,
     _prompt_view_text,
     _register_response,
 )
@@ -173,3 +176,15 @@ def test_prompt_view_explains_missing_or_oversized_snapshots():
         )
     )
     assert "[payload display truncated;" in rendered
+
+
+def test_command_transcript_text_sanitizes_control_characters_and_caps_output():
+    rendered = _command_transcript_text(
+        {"argv": ["printf", "hello\x1b[31m"]},
+        "exit code: 0\n" + ("x" * (MAX_COMMAND_TRANSCRIPT_CHARS + 1)),
+    )
+
+    assert "Command · printf 'hello�[31m'" in rendered
+    assert "\x1b" not in rendered
+    assert rendered.endswith("[display truncated]")
+    assert _safe_transcript_text("line\rnext") == "line�next"

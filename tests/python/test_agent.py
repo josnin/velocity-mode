@@ -54,6 +54,52 @@ async def test_complete_mock_tool_cycle_streams_and_returns_file_result(tmp_path
 
 
 @pytest.mark.asyncio
+async def test_agent_emits_command_start_and_bounded_completion_events(tmp_path: Path):
+    class CommandProvider:
+        name = "command"
+        model = "test"
+        capabilities = ProviderCapabilities(streaming=True, tool_calling=True)
+
+        def __init__(self):
+            self.requests = 0
+
+        async def stream(self, messages, tools):
+            self.requests += 1
+            if self.requests == 1:
+                yield ProviderEvent(
+                    "response",
+                    tool_calls=[
+                        ToolCall(
+                            "command-1",
+                            "run_command",
+                            {"argv": ["printf", "command output"]},
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                )
+            else:
+                yield ProviderEvent("text", text="done")
+                yield ProviderEvent("response", finish_reason="stop")
+
+    async def approve(name, arguments):
+        return name == "run_command"
+
+    events = [
+        event
+        async for event in Agent(
+            CommandProvider(), ToolRegistry(tmp_path, approve=approve)
+        ).run("Run a command")
+    ]
+
+    command_events = [event for event in events if event.kind == "tool"]
+    assert len(command_events) == 2
+    assert command_events[0].tool_name == "run_command"
+    assert command_events[0].tool_result is None
+    assert command_events[1].tool_call_id == "command-1"
+    assert command_events[1].tool_result == "exit code: 0\ncommand output"
+
+
+@pytest.mark.asyncio
 async def test_inspecting_captured_request_does_not_call_provider_or_mutate_history(
     tmp_path: Path,
 ):

@@ -418,6 +418,11 @@ and tool output. Tool call IDs and argument objects are validated, and tool
 results are sent in dedicated `tool` messages rather than flattened into user
 messages.
 
+Approved commands appear in the transcript as one compact entry: the argv and
+`running…` status are replaced with the bounded final exit result. Velocity-Mode
+does not stream each command-output line, which keeps the terminal responsive
+and the transcript readable.
+
 ## Workspace instruction files
 
 When starting an interactive or `--exec` task, Velocity-Mode reads optional

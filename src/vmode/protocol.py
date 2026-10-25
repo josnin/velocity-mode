@@ -86,10 +86,14 @@ class ProviderEvent:
 
 @dataclass(slots=True)
 class AgentEvent:
-    kind: Literal["request", "text", "activity", "usage", "error", "done"]
+    kind: Literal["request", "text", "activity", "tool", "usage", "error", "done"]
     text: str = ""
     usage: Usage | None = None
     request: RequestSnapshot | None = None
+    tool_call_id: str = ""
+    tool_name: str = ""
+    tool_arguments: dict[str, Any] = field(default_factory=dict)
+    tool_result: str | None = None
 
 
 @dataclass(slots=True)

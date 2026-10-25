@@ -291,6 +291,106 @@ def test_prompt_view_navigates_tool_follow_up_requests(tmp_path: Path):
     assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
 
 
+def test_approved_command_result_is_visible_in_terminal_transcript(tmp_path: Path):
+    state_home = tmp_path / "state"
+    code = """
+from vmode.protocol import ProviderEvent, ToolCall
+from vmode.providers import MockProvider
+
+async def command_stream(self, messages, tools):
+    if any(message.role == "tool" for message in messages):
+        yield ProviderEvent("text", text="command complete")
+        yield ProviderEvent("response", finish_reason="stop")
+    else:
+        yield ProviderEvent(
+            "response",
+            tool_calls=[
+                ToolCall(
+                    "command-1",
+                    "run_command",
+                    {"argv": ["printf", "visible command output"]},
+                )
+            ],
+            finish_reason="tool_calls",
+        )
+
+MockProvider.stream = command_stream
+from vmode.cli import main
+raise SystemExit(main([
+    "--provider", "mock", "--mock-scenario", "read-file",
+    "--workspace", __import__("sys").argv[1], "Run the command"
+]))
+"""
+    pid, fd = pty.fork()
+    if pid == 0:
+        env = os.environ.copy()
+        env.update({"TERM": "xterm-256color", "XDG_STATE_HOME": str(state_home)})
+        os.execve(
+            sys.executable,
+            [sys.executable, "-c", code, str(tmp_path)],
+            env,
+        )
+
+    output = bytearray()
+
+    def wait_for(marker: bytes, timeout: float = 10.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([fd], [], [], 0.1)
+            if not ready:
+                continue
+            try:
+                output.extend(os.read(fd, 8192))
+            except OSError:
+                return False
+            if marker in output:
+                return True
+        return False
+
+    def wait_for_completed_response(timeout: float = 10.0) -> bool:
+        store = SessionStore(tmp_path, state_home)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            session_id = store.latest_id()
+            if session_id is not None:
+                try:
+                    record = store.load(session_id)
+                except ValueError:
+                    time.sleep(0.05)
+                    continue
+                if len(record["ui"].get("responses", [])) == 1:
+                    return True
+            time.sleep(0.05)
+        return False
+
+    status = None
+    try:
+        assert wait_for(b"INSERT")
+        os.write(fd, b"\x13")
+        assert wait_for(b"Approval required")
+        os.write(fd, b"y")
+        assert wait_for(b"visible command output"), bytes(output)
+        assert wait_for_completed_response()
+        os.write(fd, b"\x1b:q\r")
+        assert wait_for(b"\x1b[?1049l")
+    finally:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            child, child_status = os.waitpid(pid, os.WNOHANG)
+            if child:
+                status = child_status
+                break
+            time.sleep(0.05)
+        if status is None:
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+            _, status = os.waitpid(pid, 0)
+        os.close(fd)
+    assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
+
+
 def test_tui_remains_interactive_while_agent_task_runs(tmp_path: Path):
     state_home = tmp_path / "state"
     code = """

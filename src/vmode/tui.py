@@ -45,6 +45,7 @@ from .tools import ToolRegistry
 MAX_TRANSCRIPT_CHARS = 250_000
 MAX_RESPONSES = 100
 MAX_PROMPT_VIEW_PAYLOAD_CHARS = 200_000
+MAX_COMMAND_TRANSCRIPT_CHARS = 8_000
 SELECTED_RESPONSE_PREFIX = "target: "
 TUI_HELP_TEXT = (
     "Vim controls:\n"
@@ -72,6 +73,7 @@ TUI_STYLE_RULES = {
     "transcript-notice": "bold ansiyellow",
     "transcript-error": "bold ansired",
     "transcript-code": "bold",
+    "transcript-tool-label": "bold",
     "editor": "",
     "command": "",
     "activity": "dim",
@@ -144,7 +146,14 @@ class _TranscriptLexer(Lexer):
         for line in lines:
             stripped = line.lstrip()
             if line.startswith(
-                (SELECTED_RESPONSE_PREFIX, "You", "Velocity-Mode", "PROMPT SENT", "! ")
+                (
+                    SELECTED_RESPONSE_PREFIX,
+                    "You",
+                    "Velocity-Mode",
+                    "PROMPT SENT",
+                    "Command · ",
+                    "! ",
+                )
             ):
                 in_code_block = False
             if line.startswith(SELECTED_RESPONSE_PREFIX):
@@ -175,6 +184,9 @@ class _TranscriptLexer(Lexer):
             elif line.startswith("PROMPT SENT"):
                 section_style = "class:transcript-assistant"
                 style = "class:transcript-assistant-label"
+            elif line.startswith("Command · "):
+                section_style = ""
+                style = "class:transcript-tool-label"
             elif line.startswith("! Error:") or line.startswith("! Agent failed:"):
                 section_style = "class:transcript-error"
                 style = section_style
@@ -234,6 +246,35 @@ def _prompt_view_text(response: _Response | None, selected_snapshot: int = 0) ->
     chunks.extend(f"  {line}\n" for line in payload.splitlines())
     chunks.append("  ```\n")
     return "".join(chunks)
+
+
+def _safe_transcript_text(text: str) -> str:
+    return "".join(
+        character
+        if character in {"\n", "\t"} or (ord(character) >= 32 and ord(character) != 127)
+        else "\ufffd"
+        for character in text
+    )
+
+
+def _command_transcript_text(
+    arguments: dict[str, Any], result: str | None = None
+) -> str:
+    argv = arguments.get("argv")
+    command = (
+        shlex.join(argv)
+        if isinstance(argv, list) and all(isinstance(argument, str) for argument in argv)
+        else "<invalid command>"
+    )
+    command = _safe_transcript_text(command)
+    if result is None:
+        return f"Command · {command}\n  running…"
+    rendered_result = _safe_transcript_text(result)
+    if len(rendered_result) > MAX_COMMAND_TRANSCRIPT_CHARS:
+        rendered_result = (
+            rendered_result[:MAX_COMMAND_TRANSCRIPT_CHARS] + "\n[display truncated]"
+        )
+    return f"Command · {command}\n  {rendered_result}"
 
 
 def _approval_preview(name: str, arguments: dict[str, Any], workspace: Path) -> str:
@@ -320,6 +361,7 @@ async def run_tui(
     state = _UIState()
     active_task: asyncio.Task | None = None
     agent: Agent | None = None
+    command_items: dict[str, _TranscriptItem] = {}
     session_id = session_id or (sessions.new_id() if sessions else None)
     persist_handle: asyncio.TimerHandle | None = None
     if session_record:
@@ -328,7 +370,7 @@ async def run_tui(
             for item in raw_items[-2000:]:
                 if (
                     isinstance(item, dict)
-                    and item.get("role") in {"user", "assistant", "notice"}
+                    and item.get("role") in {"user", "assistant", "notice", "tool"}
                     and isinstance(item.get("text"), str)
                 ):
                     response_id = item.get("response_id")
@@ -451,6 +493,8 @@ async def run_tui(
                 chunks.extend(f"  {line}\n" for line in (item.text.splitlines() or [""]))
             elif item.role == "notice":
                 chunks.append(f"\n! {item.text}\n")
+            elif item.role == "tool":
+                chunks.append(f"\n{item.text}\n")
         return "".join(chunks)[-MAX_TRANSCRIPT_CHARS:]
 
     def redraw_transcript(transcript: TextArea, app: Application) -> None:
@@ -769,6 +813,19 @@ async def run_tui(
                         state.activities.append(event.text)
                         state.activities = state.activities[-3:]
                         app.invalidate()
+                    elif event.kind == "tool" and event.tool_name == "run_command":
+                        item = command_items.get(event.tool_call_id)
+                        if item is None:
+                            item = _TranscriptItem(
+                                "tool", _command_transcript_text(event.tool_arguments)
+                            )
+                            command_items[event.tool_call_id] = item
+                            state.items.append(item)
+                        if event.tool_result is not None:
+                            item.text = _command_transcript_text(
+                                event.tool_arguments, event.tool_result
+                            )
+                        redraw_transcript(transcript, app)
                     elif event.kind == "usage" and event.usage is not None:
                         state.latest_usage = event.usage
                         cached = (
