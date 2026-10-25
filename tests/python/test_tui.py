@@ -3,6 +3,8 @@ from pathlib import Path
 from prompt_toolkit.document import Document
 
 from vmode.tui import (
+    SELECTED_RESPONSE_PREFIX,
+    TUI_STYLE_RULES,
     _TranscriptItem,
     _TranscriptLexer,
     _UIState,
@@ -106,3 +108,20 @@ def test_transcript_lexer_distinguishes_errors_and_fenced_code():
     assert get_line(3)[0][0] == "class:transcript-code"
     assert get_line(4)[0][0] == "class:transcript-code"
     assert get_line(6)[0][0] == "class:transcript-error"
+
+
+def test_selected_response_uses_a_compact_underlined_target_label():
+    document = Document(
+        f"{SELECTED_RESPONSE_PREFIX}2/5 · Velocity-Mode\n"
+        "  Selected response body"
+    )
+    get_line = _TranscriptLexer().lex_document(document)
+
+    assert get_line(0)[0][0] == "class:transcript-selected"
+    assert get_line(1)[0][0] == "class:transcript-assistant"
+    assert "bg:" not in TUI_STYLE_RULES["transcript-selected"]
+    assert TUI_STYLE_RULES["transcript-selected"].endswith("ansibrightblue")
+
+
+def test_tui_styles_do_not_assume_terminal_background_or_truecolor():
+    assert all("bg:" not in value and "#" not in value for value in TUI_STYLE_RULES.values())

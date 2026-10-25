@@ -121,7 +121,7 @@ def test_normal_motions_and_response_copy_in_terminal(tmp_path: Path):
         os.write(fd, b"y")
         time.sleep(0.1)
         os.write(fd, b"[")
-        assert wait_for(b"SELECTED RESPONSE 1/2"), bytes(output)
+        assert wait_for(b"target: 1/2"), bytes(output)
         output.clear()
         os.write(fd, b"y")
         assert wait_for(b"Yanked response 1."), bytes(output)
@@ -131,7 +131,7 @@ def test_normal_motions_and_response_copy_in_terminal(tmp_path: Path):
         assert "Mock response: ab\nd" in copied
         output.clear()
         os.write(fd, b"]")
-        assert wait_for(b"SELECTED RESPONSE 2/2"), bytes(output)
+        assert wait_for(b"target: 2/2"), bytes(output)
         output.clear()
         os.write(fd, b"y")
         assert wait_for(b"Yanked response 2."), bytes(output)

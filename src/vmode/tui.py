@@ -43,6 +43,30 @@ from .tools import ToolRegistry
 
 MAX_TRANSCRIPT_CHARS = 250_000
 MAX_RESPONSES = 100
+SELECTED_RESPONSE_PREFIX = "target: "
+
+TUI_STYLE_RULES = {
+    "header": "",
+    "brand": "bold",
+    "dim": "dim",
+    "rule": "dim",
+    "transcript": "",
+    "transcript-user": "bold",
+    "transcript-assistant": "",
+    "transcript-assistant-label": "bold",
+    "transcript-notice": "bold ansiyellow",
+    "transcript-error": "bold ansired",
+    "transcript-code": "bold",
+    "editor": "",
+    "command": "",
+    "activity": "dim",
+    "approval": "bold ansiyellow",
+    "toolbar": "dim",
+    "mode": "bold ansibrightblue",
+    "transcript-selected": "bold underline ansibrightblue",
+    "transcript-selected-error": "bold underline ansired",
+    "selected-target": "bold ansibrightblue",
+}
 
 
 @dataclass
@@ -98,15 +122,19 @@ class _TranscriptLexer(Lexer):
 
         for line in lines:
             stripped = line.lstrip()
-            if line.startswith(("▶ SELECTED RESPONSE ", "You", "Velocity-Mode", "! ")):
+            if line.startswith((SELECTED_RESPONSE_PREFIX, "You", "Velocity-Mode", "! ")):
                 in_code_block = False
-            if line.startswith("▶ SELECTED RESPONSE "):
+            if line.startswith(SELECTED_RESPONSE_PREFIX):
                 section_style = (
                     "class:transcript-error"
                     if "· error" in line
                     else "class:transcript-assistant"
                 )
-                style = "class:transcript-selected"
+                style = (
+                    "class:transcript-selected-error"
+                    if section_style == "class:transcript-error"
+                    else "class:transcript-selected"
+                )
             elif line.startswith("You"):
                 section_style = "class:transcript-user"
                 style = section_style
@@ -316,7 +344,7 @@ async def run_tui(
                 )
                 if selected_label:
                     label = (
-                        f"▶ SELECTED RESPONSE {response_position}/"
+                        f"{SELECTED_RESPONSE_PREFIX}{response_position}/"
                         f"{len(state.responses)} · {label}"
                     )
                 chunks.append(f"\n{label}\n")
@@ -337,7 +365,7 @@ async def run_tui(
     def refresh_selection_marker(app: Application) -> None:
         text = transcript_text()
         selected_marker = (
-            f"▶ SELECTED RESPONSE {state.selected_response + 1}/"
+            f"{SELECTED_RESPONSE_PREFIX}{state.selected_response + 1}/"
             f"{len(state.responses)} ·"
             if 0 <= state.selected_response < len(state.responses)
             else ""
@@ -377,7 +405,7 @@ async def run_tui(
             result.append(
                 (
                     "class:selected-target",
-                    f" TARGET {state.selected_response + 1}/{len(state.responses)} ",
+                    f" target {state.selected_response + 1}/{len(state.responses)} ",
                 )
             )
         result.append(("class:toolbar", f" · {hint}"))
@@ -1174,29 +1202,7 @@ async def run_tui(
             Window(FormattedTextControl(toolbar_text), height=1, style="class:toolbar"),
         ]
     )
-    style = Style.from_dict(
-        {
-            "header": "bg:#20242b",
-            "brand": "bold #ffffff bg:#20242b",
-            "dim": "#aab2bf bg:#20242b",
-            "rule": "#414853",
-            "transcript": "#e6e8eb",
-            "transcript-user": "bold #c9d1d9",
-            "transcript-assistant": "#e6e8eb",
-            "transcript-assistant-label": "bold #58a6ff",
-            "transcript-notice": "bold #e3b341",
-            "transcript-error": "bold #f85149",
-            "transcript-code": "#c9d1d9 bg:#161b22",
-            "editor": "#ffffff",
-            "command": "#ffffff",
-            "activity": "#9da7b3",
-            "approval": "bold #e3b341",
-            "toolbar": "bg:#20242b #aab2bf",
-            "mode": "bold #ffffff bg:#6e40c9",
-            "transcript-selected": "bold #ffffff bg:#1f6feb",
-            "selected-target": "bold #ffffff bg:#1f6feb",
-        }
-    )
+    style = Style.from_dict(TUI_STYLE_RULES)
     app = Application(
         layout=Layout(
             FloatContainer(
