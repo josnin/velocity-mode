@@ -42,6 +42,13 @@ Hugging Face uses `HF_TOKEN`; Groq uses `GROQ_API_KEY`; OpenRouter uses
 does not require an API key. See the provider sections in the
 [README](../README.md) for supported endpoints and examples.
 
+### OpenRouter
+
+```sh
+export OPENROUTER_API_KEY="your_openrouter_api_key"
+vmode --provider openrouter --model "recursive/flint-v1.0:free"
+```
+
 ### Generic inference APIs
 
 The named providers are convenient defaults, not the only supported hosted
@@ -94,7 +101,7 @@ conversation:
 ```text
 :provider gemini gemini-3.8-flash
 :provider groq openai/gpt-oss-20b
-:provider openrouter provider/model
+:provider openrouter recursive/flint-v1.0:free
 :provider openai-compatible vendor/model https://api.example.com/v1
 ```
 
