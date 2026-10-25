@@ -323,136 +323,17 @@ are sent without transport encryption. Tool calling remains off by default
 because support depends on the selected model; enable it explicitly with
 `--tool-calling` only for a model and Ollama version that support tools.
 
-## Configuration
+## Configure and use VMode
 
-Configuration is read from `~/.config/vmode/config.toml` or `VMODE_CONFIG`.
-CLI values override environment values, which override TOML and built-in
-defaults:
+VMode reads `~/.config/vmode/config.toml` by default. CLI options override
+environment variables, which override TOML and built-in defaults; credentials
+remain environment-only. Tool calling defaults on for Gemini, Groq, and
+Hugging Face, and off for Ollama and generic compatible endpoints.
 
-```toml
-[provider]
-name = "huggingface"
-model = "openai/gpt-oss-120b:cheapest"
-base_url = "https://router.huggingface.co/v1"
-timeout = 300
-max_output_tokens = 4096
-tool_calling = true
-
-[agent]
-max_iterations = 24
-max_history_chars = 60000
-```
-
-The agent allows up to 24 provider request/response iterations per task by
-default (maximum 100). Tool calls that need follow-up model work consume
-iterations; tasks with many sequential tool steps may need more. Increase it
-with `--max-iterations 40` or `[agent] max_iterations = 40`. The run still
-obeys the configured overall timeout and tool-call limits. If the limit keeps
-being reached, check the transcript for repeated tool calls or a model that
-does not produce a final answer; raising the limit alone may just allow an
-unproductive loop to continue.
-
-To bound retained conversation context, the agent keeps up to 60,000
-serialized history characters by default. Set
-`--max-history-chars 16000` for a constrained provider invocation, or use
-`[agent] max_history_chars` to adjust the default configuration. This affects
-context sent from prior turns, not the separate generated-output limit.
-
-An entire task has a 300-second timeout by default. Repository reviews and
-other larger tasks can take longer; increase the budget up to 600 seconds with
-`--timeout 600`, `[provider] timeout = 600`, or `VMODE_TIMEOUT=600`. This
-setting covers the whole agent run and each individual provider request. It
-does not increase the separate 60-second limit for an approved command.
-
-Each provider response is capped at 4096 generated tokens by default to bound
-response size and potential usage. This is separate from the input/context
-window and the overall task timeout. If a response reaches the cap, Velocity-Mode
-keeps the partial response and reports that it may be incomplete. For a model
-that supports a larger output, raise the cap with
-`--max-output-tokens 8192`, `VMODE_MAX_OUTPUT_TOKENS=8192`, or
-`[provider] max_output_tokens = 8192`. Provider/model output limits vary, so use
-a value supported by the selected endpoint; a larger cap permits more generated
-tokens and may increase usage. For very large reviews, you can also ask for
-findings in focused sections.
-
-Supported environment overrides are `VMODE_PROVIDER`, `VMODE_MODEL`,
-`VMODE_BASE_URL`, `VMODE_TIMEOUT`, `VMODE_MAX_OUTPUT_TOKENS`,
-`VMODE_TOOL_CALLING`, and `VMODE_CONFIG`. Hugging Face uses `HF_TOKEN`;
-Google Gemini uses `GEMINI_API_KEY`; OpenAI-compatible endpoints use
-`VMODE_API_KEY`; Groq uses `GROQ_API_KEY`. Credentials are only read from the
-environment at runtime. Tool calling defaults on for Gemini, Groq, and Hugging
-Face, off for Ollama, OpenAI-compatible endpoints, and the default mock, and on for the mock
-`read-file` scenario.
-Disable it with `--no-tool-calling`, `VMODE_TOOL_CALLING=false`, or `tool_calling = false` if the selected
-model/provider does not support tools.
-`HF_TOKEN`, `GEMINI_API_KEY`, `GROQ_API_KEY`, and `VMODE_API_KEY` are read at
-runtime and are never accepted in TOML or CLI arguments.
-The token is sent only as an HTTPS Bearer authorization header. Redirects are
-disabled, TLS verification remains enabled, and authorization headers are not
-logged. Do not place credentials in project files or commit them.
-The old `~/.config/vima/config.toml` location and `VIMA_*` environment
-variables remain as migration fallbacks; `VMODE_*` values take precedence.
-
-## Interactive keymap
-
-The screen uses a simple conversation transcript with `You` and
-`Velocity-Mode` labels, a persistent prompt, and a live INSERT/NORMAL
-indicator. The header shows the full workspace path. Press **Ctrl+S** to submit.
-**Ctrl+D** exits only when the prompt has focus; while browsing results it
-performs Vim's half-page-down motion. During a task, you can keep drafting the
-next prompt, browse existing results, and use
-`:status`, `:usage`, or `:cancel`; a second submission is refused without
-discarding the draft. Tasks run sequentially because they share conversation
-history and approval state. Cancel the active task with **:cancel** or
-**Ctrl+C** before exiting. An empty **Enter** adds a newline; **:s** remains a
-submit-command fallback.
-
-In the prompt, **Esc** enters Normal mode; **h/j/k/l**, **^/$**, **0**, and
-**gg/G** navigate. Normal-mode **/** opens the command palette in the prompt;
-in the response browser it starts a case-insensitive Vim-style search, with
-**n/N** repeating forward/backward and wrapping through the transcript.
-**:w <file>** saves the selected completed response to a workspace-relative
-file. **:** opens commands
-such as **:status**, **:usage**, **:cancel**, **:results**, **:provider**, and **:help**.
-Insert-mode **@** completes workspace files. Enter accepts a completion;
-Escape dismisses it.
-
-Press **Tab** in Normal mode to browse responses. Use **h/j/k/l** to scroll,
-**Ctrl+D** for half a page down, **[** for the older response and **]** for the
-newer response targeted by save/copy. The current target is shown beside the
-mode indicator and its response heading is highlighted in the transcript;
-changing the target scrolls to that response. Use **v** or **V** then **y** to
-copy a selection; plain **y** copies the selected response. Tab returns to the
-prompt.
-Clipboard copying uses terminal OSC 52 support. From the response browser,
-**:w <file>** saves the selected response (not the prompt); paths must stay
-inside the workspace and target an existing directory.
-
-While no task is running, `:provider <provider> <model> [base-url]` switches
-the provider for later requests without discarding the current conversation.
-The optional base URL is needed for a custom OpenAI-compatible endpoint and is
-saved with the session; provider credentials remain environment-only. The
-command retains conversation history, uses the selected provider's default
-tool-calling behavior unless an environment or CLI override is active, and
-cannot run from read-only prompt inspection.
-
-Velocity-Mode keeps a stable system/tool prefix and the latest four
-conversation turns, up to 60,000 serialized characters of older turns. Old
-turns are removed as whole groups so tool-call/result pairs stay valid; the current task and its
-tool cycle are not truncated by this history limit. Hugging Face/provider
-prefix caching is automatic and provider-dependent; Velocity-Mode does not claim a
-cache hit or cost reduction. `:usage` reports cached-input tokens only when
-the provider returns that metadata. Explicit `@file` context and the current
-task are still sent as requested.
-
-The model receives only files explicitly referenced as `@path` or
-`@"path with spaces"`. References are resolved inside the selected workspace;
-traversal, symlink escapes, excluded paths, binary files, and oversized
-context are rejected. This mechanism does not attach the whole repository.
-
-Enabling tool calling sends the fixed registry's tool definitions, but does
-not guarantee the selected model supports or reliably follows them. Mock
-`read-file` mode enables tools deterministically for offline end-to-end tests.
+For the config-file format, environment overrides, Vim keymap, provider
+switching, request inspection, session recovery, transcript clearing, and
+runtime limits, use the [user manual](docs/USER_MANUAL.md). Use `vmode --help`
+for the complete CLI option reference.
 
 ## Tools and safety
 
