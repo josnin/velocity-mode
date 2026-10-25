@@ -2,11 +2,53 @@
 
 Author: Velocity-Mode
 
-Velocity-Mode (`vmode`) is a Python 3.11+ coding-agent CLI with a Vim-inspired
-terminal editor. It streams model responses and supports bounded tool calls.
-It includes Hugging Face and generic OpenAI Chat Completions-compatible
-providers, Google Gemini Developer API and Groq support, and a deterministic
-mock for offline development and tests.
+Velocity-Mode (`vmode`) is a Python 3.11+ coding-agent CLI for people who
+prefer a keyboard-first, Vim-inspired terminal workflow. It streams model
+responses, supports bounded tool calls, and keeps the prompt, results, and
+approvals in one restrained terminal interface. It includes Hugging Face,
+Gemini, Groq, Ollama, and documented OpenAI Chat Completions-compatible
+providers, plus a deterministic mock for offline development and tests.
+
+## Why Velocity-Mode
+
+- **Vim-like, minimalist interaction.** Edit prompts in INSERT/NORMAL modes,
+  browse results with familiar motions, search, select/yank, and stay in a
+  compact borderless terminal UI.
+- **Provider flexibility without discarding a task.** Switch an idle session
+  with `:provider <provider> <model> [base-url]` if a model is unavailable,
+  quota-limited, or unsuitable, while retaining the conversation history.
+- **Auditable agent work.** Streamed responses, captured outgoing requests,
+  approvals, and compact command results make the work visible without
+  turning the transcript into a dashboard.
+- **Deliberate workspace access.** The fixed tool registry confines paths to
+  the workspace; writes, commands, Git staging, and commits need explicit
+  approval.
+- **Practical local recovery.** Sessions are private, workspace-scoped, and
+  resumable after an interruption. The mock provider supports deterministic,
+  offline development and tests.
+
+### Context and token discipline
+
+Velocity-Mode reduces avoidable context growth; it does **not** claim a fixed
+token or cost saving because tokenization, provider-side caching, and billing
+are provider/model specific.
+
+- Only explicit `@path` references are attached; it does not send the whole
+  repository by default.
+- File search results and tool output are bounded before returning to the
+  model. Previous history is kept as complete turns, capped by default at four
+  turns and 60,000 serialized characters.
+- Task skills are selected from metadata rather than all being injected, and
+  the selected content is frozen for that task.
+- System instructions and tool schemas remain stable across turns, which may
+  allow prefix caching on providers that support it. `:usage` shows
+  provider-reported cached-input tokens when available, but does not infer a
+  cache hit or monetary saving.
+
+Provider switching starts subsequent requests with the selected provider; it
+does not cancel an active request or eliminate the retained history from the
+next request. Configure the target provider's credentials and choose a model
+that supports the needed features.
 
 ## Install
 
