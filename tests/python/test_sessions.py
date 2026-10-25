@@ -37,6 +37,7 @@ def test_session_round_trip_preserves_tool_messages_and_private_permissions(tmp_
         messages,
         {"items": []},
         tool_calling=True,
+        base_url="https://api.example.test/v1",
     )
 
     loaded = store.load(session_id)
@@ -55,6 +56,7 @@ def test_session_round_trip_preserves_tool_messages_and_private_permissions(tmp_
     assert loaded["messages"][2].tool_call_id == "call-1"
     assert loaded["ui"] == {"items": []}
     assert loaded["tool_calling"] is True
+    assert loaded["base_url"] == "https://api.example.test/v1"
     assert stat.S_IMODE(store.directory.stat().st_mode) == 0o700
     assert stat.S_IMODE((store.directory / f"{session_id}.json").stat().st_mode) == 0o600
 
@@ -103,4 +105,24 @@ def test_session_loader_rejects_invalid_tool_calling_setting(tmp_path: Path):
     path.write_text(json.dumps(record), encoding="utf-8")
 
     with pytest.raises(ValueError, match="tool-calling setting"):
+        store.load(session_id)
+
+
+def test_session_loader_rejects_invalid_base_url(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    store = SessionStore(workspace, tmp_path / "state")
+    session_id = store.new_id()
+    store.save(session_id, "mock", "mock/deterministic", [], {})
+    path = store._path(session_id)
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["base_url"] = ["not", "a", "URL"]
+    path.write_text(json.dumps(record), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="base URL"):
+        store.load(session_id)
+
+    record["base_url"] = "https://token@api.example.test/v1"
+    path.write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(ValueError, match="must not contain credentials"):
         store.load(session_id)

@@ -55,7 +55,8 @@ TUI_HELP_TEXT = (
     "  Ctrl+S send · Enter newline · @ insert file reference · "
     "Esc leave prompt inspection\n"
     "Commands:\n"
-    "  :status · :usage · :cancel · :results · :prompt · :w <file> · "
+    "  :status · :usage · :provider <name> <model> [url] · :cancel · :results · "
+    ":prompt · :w <file> · "
     ":clear · :q"
 )
 
@@ -311,6 +312,10 @@ async def run_tui(
     sessions: SessionStore | None = None,
     session_id: str | None = None,
     session_record: dict[str, Any] | None = None,
+    provider_factory: Callable[
+        [Settings, str, str, str | None], tuple[Settings, Provider]
+    ]
+    | None = None,
 ) -> int:
     state = _UIState()
     active_task: asyncio.Task | None = None
@@ -620,6 +625,7 @@ async def run_tui(
                 messages,
                 ui,
                 tool_calling=provider.capabilities.tool_calling,
+                base_url=settings.base_url,
             )
         except (OSError, ValueError) as exc:
             state.activities.append(f"Session save failed: {exc}")
@@ -836,17 +842,20 @@ async def run_tui(
             get_app().invalidate()
 
     registry = ToolRegistry(settings.workspace, approve=approve)
-    agent = Agent(
-        provider,
-        registry,
-        AgentLimits(
-            max_iterations=settings.max_iterations,
-            max_history_chars=settings.max_history_chars,
-            max_output_tokens=settings.max_output_tokens,
-            timeout_seconds=settings.timeout,
-        ),
-        system_prompt=build_system_prompt(provider, settings.workspace),
-    )
+    def create_agent(selected_provider: Provider) -> Agent:
+        return Agent(
+            selected_provider,
+            registry,
+            AgentLimits(
+                max_iterations=settings.max_iterations,
+                max_history_chars=settings.max_history_chars,
+                max_output_tokens=settings.max_output_tokens,
+                timeout_seconds=settings.timeout,
+            ),
+            system_prompt=build_system_prompt(selected_provider, settings.workspace),
+        )
+
+    agent = create_agent(provider)
     if session_record:
         restored = session_record.get("messages", [])
         if isinstance(restored, list):
@@ -1214,7 +1223,7 @@ async def run_tui(
         transcript.buffer.cursor_up(count=max(1, event.app.output.get_size().rows // 2))
 
     def handle_command(command: str, app: Application) -> None:
-        nonlocal active_task
+        nonlocal active_task, agent, provider, settings
         command = command.strip()
         if command.startswith(":") or command.startswith("/"):
             command = command[1:]
@@ -1275,6 +1284,47 @@ async def run_tui(
                 add_notice("Usage: :prompt")
             else:
                 toggle_prompt_view(app)
+        elif name == "provider":
+            if len(arguments) not in {2, 3}:
+                add_notice("Usage: :provider <provider> <model> [base-url]")
+            elif state.show_prompt:
+                state.activities.append("Leave prompt inspection with Esc before switching providers.")
+                state.activities = state.activities[-3:]
+                app.invalidate()
+            elif active_task is not None and not active_task.done():
+                add_notice("Cannot switch providers while a task is running; use :cancel first.")
+            elif provider_factory is None:
+                add_notice("Provider switching is unavailable in this session.")
+            else:
+                try:
+                    new_settings, new_provider = provider_factory(
+                        settings,
+                        arguments[0],
+                        arguments[1],
+                        arguments[2] if len(arguments) == 3 else None,
+                    )
+                except ValueError as exc:
+                    add_notice(f"Could not switch provider: {exc}")
+                else:
+                    assert agent is not None
+                    previous_history = list(agent.history)
+                    previous_requests = agent.request_count
+                    previous_tool_calls = agent.tool_call_count
+                    settings = new_settings
+                    provider = new_provider
+                    agent = create_agent(provider)
+                    agent.history = [
+                        message for message in agent.history if message.role == "system"
+                    ] + [
+                        message for message in previous_history if message.role != "system"
+                    ]
+                    agent.request_count = previous_requests
+                    agent.tool_call_count = previous_tool_calls
+                    state.latest_usage = None
+                    add_notice(
+                        f"Switched provider to {provider.name}/{provider.model}; "
+                        "conversation history retained."
+                    )
         elif name == "s":
             if arguments:
                 add_notice("Usage: :s")

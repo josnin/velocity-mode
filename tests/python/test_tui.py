@@ -136,6 +136,7 @@ def test_tui_help_collects_vim_controls_and_commands():
     assert "h/j/k/l" in TUI_HELP_TEXT
     assert "Ctrl+S send" in TUI_HELP_TEXT
     assert ":prompt" in TUI_HELP_TEXT
+    assert ":provider <name> <model> [url]" in TUI_HELP_TEXT
     assert ":w <file>" in TUI_HELP_TEXT
 
 

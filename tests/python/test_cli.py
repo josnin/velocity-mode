@@ -14,6 +14,7 @@ from vmode.cli import (
     _settings_for_session,
     make_parser,
     make_provider,
+    make_session_provider,
 )
 from vmode.config import Settings, load_settings
 from vmode.protocol import ProviderCapabilities, ProviderEvent, ToolCall
@@ -317,6 +318,47 @@ def test_ollama_provider_defaults_to_local_endpoint_and_tools_off(tmp_path, monk
     assert provider.name == "ollama"
     assert provider.base_url == "http://127.0.0.1:11434/v1"
     assert not provider.capabilities.tool_calling
+
+
+def test_session_provider_switch_uses_provider_defaults_and_explicit_endpoint(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.delenv("VMODE_TOOL_CALLING", raising=False)
+    monkeypatch.delenv("VIMA_TOOL_CALLING", raising=False)
+    args = make_parser().parse_args(["--workspace", str(tmp_path)])
+    settings = load_settings(args)
+
+    switched, provider = make_session_provider(
+        settings, args, "gemini", "gemini-3.8-flash"
+    )
+
+    assert switched.provider == "gemini"
+    assert switched.model == "gemini-3.8-flash"
+    assert switched.tool_calling
+    assert provider.name == "gemini"
+    assert provider.base_url == "https://generativelanguage.googleapis.com/v1beta/openai"
+
+    switched, provider = make_session_provider(
+        switched,
+        args,
+        "openai-compatible",
+        "vendor/model",
+        "https://api.example.test/v1",
+    )
+
+    assert switched.base_url == "https://api.example.test/v1"
+    assert not switched.tool_calling
+    assert provider.name == "openai-compatible"
+    assert provider.base_url == "https://api.example.test/v1"
+
+    with pytest.raises(ValueError, match="must not contain credentials"):
+        make_session_provider(
+            switched,
+            args,
+            "openai-compatible",
+            "vendor/model",
+            "https://token@api.example.test/v1",
+        )
 
 
 def test_cli_offers_documented_modes_and_explicit_noninteractive_flag():

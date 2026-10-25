@@ -5,6 +5,7 @@ import asyncio
 import base64
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,7 @@ from .providers import (
     OpenAICompatibleProvider,
     Provider,
 )
-from .sessions import SessionStore
+from .sessions import SessionStore, validate_session_base_url
 from .tools import ToolRegistry
 
 COMMANDS = {
@@ -35,6 +36,7 @@ COMMANDS = {
     "/s": "Submit the current prompt (fallback)",
     "/results": "Browse previous responses",
     "/prompt": "Inspect the selected response's sent request",
+    "/provider": "Switch provider and model for later requests",
     "/copy": "Yank the selected response",
     "/clear": "Clear the visible transcript",
     "/quit": "Exit Velocity-Mode",
@@ -246,6 +248,40 @@ def make_provider(settings: Settings, args: argparse.Namespace) -> Provider:
     raise ValueError(f"Unsupported provider: {settings.provider}")
 
 
+def make_session_provider(
+    settings: Settings,
+    args: argparse.Namespace,
+    provider_name: str,
+    model: str,
+    base_url: str | None = None,
+) -> tuple[Settings, Provider]:
+    provider_name = provider_name.strip()
+    model = model.strip()
+    if not provider_name or not model:
+        raise ValueError("Provider and model must not be empty")
+    changed_provider = provider_name != settings.provider
+    switched = replace(
+        settings,
+        provider=provider_name,
+        model=model,
+        base_url=(
+            base_url.strip()
+            if base_url is not None
+            else (settings.base_url if not changed_provider else "")
+        ),
+    )
+    if (
+        changed_provider
+        and args.tool_calling is None
+        and "VMODE_TOOL_CALLING" not in os.environ
+        and "VIMA_TOOL_CALLING" not in os.environ
+    ):
+        switched.tool_calling = provider_name in {"gemini", "groq", "huggingface"}
+    if switched.base_url:
+        validate_session_base_url(switched.base_url)
+    return switched, make_provider(switched, args)
+
+
 def _settings_for_session(
     args: argparse.Namespace, session_record: dict[str, Any]
 ) -> Settings:
@@ -253,6 +289,9 @@ def _settings_for_session(
     session_args.provider = session_record["provider"]
     settings = load_settings(session_args)
     settings.model = session_record["model"]
+    saved_base_url = session_record.get("base_url")
+    if isinstance(saved_base_url, str):
+        settings.base_url = saved_base_url
     saved_tool_calling = session_record.get("tool_calling")
     tool_calling_overridden = (
         args.tool_calling is not None
@@ -393,6 +432,9 @@ def main(argv: list[str] | None = None) -> int:
                 sessions=sessions,
                 session_id=session_id,
                 session_record=session_record,
+                provider_factory=lambda current, name, model, base_url: make_session_provider(
+                    current, args, name, model, base_url
+                ),
             )
         )
     except ValueError as exc:

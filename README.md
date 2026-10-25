@@ -360,7 +360,7 @@ in the response browser it starts a case-insensitive Vim-style search, with
 **n/N** repeating forward/backward and wrapping through the transcript.
 **:w <file>** saves the selected completed response to a workspace-relative
 file. **:** opens commands
-such as **:status**, **:usage**, **:cancel**, **:results**, and **:help**.
+such as **:status**, **:usage**, **:cancel**, **:results**, **:provider**, and **:help**.
 Insert-mode **@** completes workspace files. Enter accepts a completion;
 Escape dismisses it.
 
@@ -374,6 +374,14 @@ prompt.
 Clipboard copying uses terminal OSC 52 support. From the response browser,
 **:w <file>** saves the selected response (not the prompt); paths must stay
 inside the workspace and target an existing directory.
+
+While no task is running, `:provider <provider> <model> [base-url]` switches
+the provider for later requests without discarding the current conversation.
+The optional base URL is needed for a custom OpenAI-compatible endpoint and is
+saved with the session; provider credentials remain environment-only. The
+command retains conversation history, uses the selected provider's default
+tool-calling behavior unless an environment or CLI override is active, and
+cannot run from read-only prompt inspection.
 
 Velocity-Mode keeps a stable system/tool prefix and the latest four
 conversation turns, up to 60,000 serialized characters of older turns. Old

@@ -10,12 +10,30 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from .protocol import Message, ToolCall
 
 MAX_SESSION_BYTES = 10_000_000
 MAX_SESSIONS = 25
 _SESSION_ID = re.compile(r"^[0-9a-f]{32}$")
+
+
+def validate_session_base_url(base_url: str) -> None:
+    try:
+        parsed = urlsplit(base_url)
+        parsed.port
+    except ValueError as exc:
+        raise ValueError("Session base URL is invalid.") from exc
+    if (
+        parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            "Session base URL must not contain credentials, a query, or a fragment."
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +171,10 @@ class SessionStore:
             or not isinstance(record.get("title"), str)
         ):
             raise ValueError("Session metadata is invalid.")
+        if "base_url" in record:
+            if not isinstance(record["base_url"], str):
+                raise ValueError("Session base URL is invalid.")
+            validate_session_base_url(record["base_url"])
         if "tool_calling" in record and type(record["tool_calling"]) is not bool:
             raise ValueError("Session tool-calling setting is invalid.")
         if record.get("workspace") != str(self.workspace):
@@ -174,7 +196,10 @@ class SessionStore:
         messages: list[Message],
         ui: dict[str, Any],
         tool_calling: bool | None = None,
+        base_url: str | None = None,
     ) -> None:
+        if base_url:
+            validate_session_base_url(base_url)
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.directory.chmod(0o700)
         title = next(
@@ -194,6 +219,8 @@ class SessionStore:
         }
         if tool_calling is not None:
             record["tool_calling"] = tool_calling
+        if base_url:
+            record["base_url"] = base_url
         data = json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         if len(data) > MAX_SESSION_BYTES:
             raise ValueError("Session exceeds the storage size limit.")

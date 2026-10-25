@@ -123,9 +123,19 @@ def test_normal_motions_and_response_copy_in_terminal(tmp_path: Path):
         assert "Mock response: ab\nd" in first_register
         assert first_register.startswith(" M\n\n")
 
+        record = store.load(session_id)
+        previous_history = [
+            message for message in record["messages"] if message.role != "system"
+        ]
         output.clear()
-        os.write(fd, b"\t")
+        os.write(fd, b":provider mock mock/alternate\r")
         time.sleep(0.1)
+        record = store.load(session_id)
+        assert record["provider"] == "mock"
+        assert record["model"] == "mock/alternate"
+        assert [message for message in record["messages"] if message.role != "system"] == previous_history
+
+        output.clear()
         os.write(fd, b"i")
         assert wait_for(b"INSERT")
         os.write(fd, b" second task")
