@@ -131,17 +131,18 @@ def test_tui_styles_do_not_assume_terminal_background_or_truecolor():
     assert all("bg:" not in value and "#" not in value for value in TUI_STYLE_RULES.values())
 
 
-def test_prompt_view_renders_all_captured_requests_without_mutation():
+def test_prompt_view_selects_one_pretty_printed_request_without_mutation():
     snapshots = [
         RequestSnapshot(1, '{"model":"mock","messages":[{"role":"user"}]}'),
         RequestSnapshot(2, '{"model":"mock","messages":[{"role":"tool"}]}'),
     ]
     response = _Response(4, "Completed", snapshots)
 
-    rendered = _prompt_view_text(response)
+    rendered = _prompt_view_text(response, selected_snapshot=1)
 
-    assert "PROMPT SENT — request 1" in rendered
-    assert "PROMPT SENT — request 2" in rendered
+    assert "PROMPT SENT — request 2 · 2/2" in rendered
+    assert "request 1" not in rendered
+    assert '"role": "tool"' in rendered
     assert snapshots == response.request_snapshots
 
 

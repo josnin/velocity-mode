@@ -84,7 +84,7 @@ def test_normal_motions_and_response_copy_in_terminal(tmp_path: Path):
         output.clear()
         os.write(fd, b":prompt\r")
         assert wait_for(b"PROMPT SENT"), bytes(output)
-        assert b'"model":"mock/deterministic"' in output
+        assert b'"model": "mock/deterministic"' in output
         store = SessionStore(tmp_path, state_home)
         session_id = store.latest_id()
         assert session_id is not None
@@ -172,6 +172,91 @@ def test_normal_motions_and_response_copy_in_terminal(tmp_path: Path):
         assert b"\x1b[?1049l" not in output
 
         output.clear()
+        os.write(fd, b":q\r")
+        assert wait_for(b"\x1b[?1049l")
+    finally:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            child, child_status = os.waitpid(pid, os.WNOHANG)
+            if child:
+                status = child_status
+                break
+            time.sleep(0.05)
+        if status is None:
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+            _, status = os.waitpid(pid, 0)
+        os.close(fd)
+    assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
+
+
+def test_prompt_view_navigates_tool_follow_up_requests(tmp_path: Path):
+    source = tmp_path / "README.md"
+    source.write_text("# Test\n", encoding="utf-8")
+    pid, fd = pty.fork()
+    if pid == 0:
+        env = os.environ.copy()
+        env["VMODE_CONFIG"] = str(tmp_path / "missing.toml")
+        os.execve(
+            sys.executable,
+            [
+                sys.executable,
+                "-m",
+                "vmode",
+                "--provider",
+                "mock",
+                "--mock-scenario",
+                "read-file",
+                "--workspace",
+                str(tmp_path),
+                "Inspect @README.md",
+            ],
+            env,
+        )
+
+    output = bytearray()
+
+    def wait_for(marker: bytes, timeout: float = 10.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([fd], [], [], 0.1)
+            if not ready:
+                continue
+            try:
+                output.extend(os.read(fd, 8192))
+            except OSError:
+                return False
+            if marker in output:
+                return True
+        return False
+
+    status = None
+    try:
+        assert wait_for(b"INSERT")
+        os.write(fd, b"\x1b\x13")
+        assert wait_for(b"Turn complete"), bytes(output)
+        output.clear()
+        os.write(fd, b":prompt\r")
+        assert wait_for(b"PROMPT SENT"), bytes(output)
+        assert b"request 1" in output
+        output.clear()
+        os.write(fd, b"]")
+        os.write(fd, b"y")
+        assert wait_for(b"\x1b]52;c;"), bytes(output)
+        assert wait_for(b"\x07"), bytes(output)
+        match = re.search(rb"\x1b\]52;c;([A-Za-z0-9+/=]+)\x07", output)
+        assert match is not None
+        assert "request 2" in base64.b64decode(match.group(1)).decode("utf-8")
+        output.clear()
+        os.write(fd, b"[")
+        os.write(fd, b"y")
+        assert wait_for(b"\x1b]52;c;"), bytes(output)
+        assert wait_for(b"\x07"), bytes(output)
+        match = re.search(rb"\x1b\]52;c;([A-Za-z0-9+/=]+)\x07", output)
+        assert match is not None
+        assert "request 1" in base64.b64decode(match.group(1)).decode("utf-8")
         os.write(fd, b":q\r")
         assert wait_for(b"\x1b[?1049l")
     finally:
