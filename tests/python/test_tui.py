@@ -5,6 +5,7 @@ from prompt_toolkit.document import Document
 from vmode.tui import (
     MAX_PROMPT_VIEW_PAYLOAD_CHARS,
     SELECTED_RESPONSE_PREFIX,
+    TUI_HELP_TEXT,
     TUI_STYLE_RULES,
     _TranscriptItem,
     _TranscriptLexer,
@@ -129,6 +130,13 @@ def test_selected_response_uses_a_compact_underlined_target_label():
 
 def test_tui_styles_do_not_assume_terminal_background_or_truecolor():
     assert all("bg:" not in value and "#" not in value for value in TUI_STYLE_RULES.values())
+
+
+def test_tui_help_collects_vim_controls_and_commands():
+    assert "h/j/k/l" in TUI_HELP_TEXT
+    assert "Ctrl+S send" in TUI_HELP_TEXT
+    assert ":prompt" in TUI_HELP_TEXT
+    assert ":w <file>" in TUI_HELP_TEXT
 
 
 def test_prompt_view_selects_one_pretty_printed_request_without_mutation():

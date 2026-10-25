@@ -46,6 +46,17 @@ MAX_TRANSCRIPT_CHARS = 250_000
 MAX_RESPONSES = 100
 MAX_PROMPT_VIEW_PAYLOAD_CHARS = 200_000
 SELECTED_RESPONSE_PREFIX = "target: "
+TUI_HELP_TEXT = (
+    "Vim controls:\n"
+    "  Esc Normal · i Insert · h/j/k/l move · ^/$/0/gg/G jump\n"
+    "  Tab switch prompt/results · Ctrl+D half-page down in results\n"
+    "  / search results · n/N repeat · v/V select · y copy\n"
+    "Prompt:\n"
+    "  Ctrl+S send · Enter newline · @ insert file reference\n"
+    "Commands:\n"
+    "  :status · :usage · :cancel · :results · :prompt · :w <file> · "
+    ":clear · :q"
+)
 
 TUI_STYLE_RULES = {
     "header": "",
@@ -481,19 +492,16 @@ async def run_tui(
         if state.pending_approval:
             hint = "Approval pending · y allow · n deny · Ctrl+C cancel"
         elif state.show_prompt:
-            hint = (
-                "Prompt inspection · [ previous / ] next request · :prompt return · "
-                "/ search · y copy · :w save"
-            )
+            hint = "Prompt · [/] request · :prompt return · y copy · :w save"
         elif app.layout.has_focus(transcript):
             if state.busy:
-                hint = "Task running · :status · :usage · :cancel · Ctrl+C cancel · Ctrl+D half-page down · Tab prompt"
+                hint = "Task running · :cancel · Tab prompt"
             else:
-                hint = "Ctrl+D half-page down · / search · n/N repeat · [ older · ] newer result (save/copy) · v/V select · y copy · Tab prompt"
+                hint = "Results · [/] target · / search · y copy · Tab prompt"
         elif state.busy:
-            hint = "Task running · draft next prompt · Esc :status/:usage/:cancel · Ctrl+C cancel · Tab results"
+            hint = "Task running · :cancel · Tab results"
         else:
-            hint = "Enter newline · Ctrl+S send · Ctrl+D quit · Esc Normal · / commands · @ files"
+            hint = "Ctrl+S send · Esc Normal · :help"
         result = [("class:mode", f" {mode} ")]
         if 0 <= state.selected_response < len(state.responses):
             result.append(
@@ -1295,14 +1303,7 @@ async def run_tui(
             state.items.clear()
             redraw_transcript(transcript, app)
         elif name == "help":
-            add_notice(
-                "Enter newline · Ctrl+S send (:s fallback) · "
-                "Ctrl+D quit from prompt / half-page down in results · "
-                ":w <file> save response · @ files · Tab responses · "
-                ":prompt inspect sent request · "
-                "/ search, n/N repeat · [ older / ] newer response for save/copy · "
-                "v/V select · y copy · :status tool state"
-            )
+            add_notice(TUI_HELP_TEXT)
         else:
             prefix = state.command_prefix if state.command_prefix == "/" else ":"
             add_notice(f"Unknown command {prefix}{name}. Use /help or :help.")
