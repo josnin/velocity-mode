@@ -66,20 +66,30 @@ class ProviderCapabilities:
     tool_calling: bool
 
 
+@dataclass(frozen=True, slots=True)
+class RequestSnapshot:
+    identifier: int
+    payload: str | None
+    unavailable_reason: str = ""
+
+
 @dataclass(slots=True)
 class ProviderEvent:
-    kind: Literal["text", "response"]
+    kind: Literal["request", "text", "response"]
     text: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     finish_reason: str | None = None
     usage: Usage | None = None
+    request_payload: str | None = None
+    request_unavailable_reason: str = ""
 
 
 @dataclass(slots=True)
 class AgentEvent:
-    kind: Literal["text", "activity", "usage", "error", "done"]
+    kind: Literal["request", "text", "activity", "usage", "error", "done"]
     text: str = ""
     usage: Usage | None = None
+    request: RequestSnapshot | None = None
 
 
 @dataclass(slots=True)

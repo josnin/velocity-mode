@@ -34,6 +34,7 @@ COMMANDS = {
     "/usage": "Show token usage",
     "/s": "Submit the current prompt (fallback)",
     "/results": "Browse previous responses",
+    "/prompt": "Inspect the selected response's sent request",
     "/copy": "Yank the selected response",
     "/clear": "Clear the visible transcript",
     "/quit": "Exit Velocity-Mode",

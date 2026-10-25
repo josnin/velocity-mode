@@ -72,6 +72,7 @@ async def test_huggingface_stream_parses_text_tool_calls_usage_and_request():
         captured["url"] = str(request.url)
         captured["headers"] = request.headers
         captured["body"] = json.loads(request.content)
+        captured["raw_body"] = request.content.decode("utf-8")
         return httpx.Response(200, stream=ByteStream(chunks))
 
     provider = HuggingFaceProvider(
@@ -87,6 +88,12 @@ async def test_huggingface_stream_parses_text_tool_calls_usage_and_request():
             [{"type": "function", "function": {"name": "read_file"}}],
         )
     ]
+    snapshot = events[0]
+    assert snapshot.kind == "request"
+    assert snapshot.request_payload is not None
+    assert snapshot.request_payload == captured["raw_body"]
+    assert json.loads(snapshot.request_payload) == captured["body"]
+    assert "fake-token" not in snapshot.request_payload
     assert [event.text for event in events if event.kind == "text"] == ["Reading "]
     response = events[-1]
     assert response.tool_calls[0].arguments == {"path": "README.md"}

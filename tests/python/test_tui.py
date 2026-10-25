@@ -3,14 +3,18 @@ from pathlib import Path
 from prompt_toolkit.document import Document
 
 from vmode.tui import (
+    MAX_PROMPT_VIEW_PAYLOAD_CHARS,
     SELECTED_RESPONSE_PREFIX,
     TUI_STYLE_RULES,
     _TranscriptItem,
     _TranscriptLexer,
+    _Response,
     _UIState,
     _approval_preview,
+    _prompt_view_text,
     _register_response,
 )
+from vmode.protocol import RequestSnapshot
 
 
 def test_edit_approval_preview_shows_targeted_diff(tmp_path: Path):
@@ -125,3 +129,37 @@ def test_selected_response_uses_a_compact_underlined_target_label():
 
 def test_tui_styles_do_not_assume_terminal_background_or_truecolor():
     assert all("bg:" not in value and "#" not in value for value in TUI_STYLE_RULES.values())
+
+
+def test_prompt_view_renders_all_captured_requests_without_mutation():
+    snapshots = [
+        RequestSnapshot(1, '{"model":"mock","messages":[{"role":"user"}]}'),
+        RequestSnapshot(2, '{"model":"mock","messages":[{"role":"tool"}]}'),
+    ]
+    response = _Response(4, "Completed", snapshots)
+
+    rendered = _prompt_view_text(response)
+
+    assert "PROMPT SENT — request 1" in rendered
+    assert "PROMPT SENT — request 2" in rendered
+    assert snapshots == response.request_snapshots
+
+
+def test_prompt_view_explains_missing_or_oversized_snapshots():
+    assert "No captured request" in _prompt_view_text(_Response(1, "Completed"))
+    rendered = _prompt_view_text(
+        _Response(
+            2,
+            "Completed",
+            [RequestSnapshot(3, None, "Request payload exceeds the local limit.")],
+        )
+    )
+    assert "Request payload exceeds the local limit." in rendered
+    rendered = _prompt_view_text(
+        _Response(
+            3,
+            "Completed",
+            [RequestSnapshot(4, "x" * (MAX_PROMPT_VIEW_PAYLOAD_CHARS + 1))],
+        )
+    )
+    assert "[payload display truncated;" in rendered

@@ -22,6 +22,8 @@ from .protocol import (
     Usage,
 )
 
+MAX_REQUEST_SNAPSHOT_CHARS = 1_000_000
+
 
 class Provider(Protocol):
     name: str
@@ -52,6 +54,18 @@ class MockProvider:
         self, messages: Sequence[Message], tools: Sequence[dict]
     ) -> AsyncIterator[ProviderEvent]:
         self.requests.append(list(messages))
+        payload = {
+            "model": self.model,
+            "messages": [message.as_api_message() for message in messages],
+            "stream": True,
+        }
+        if tools and self.capabilities.tool_calling:
+            payload["tools"] = list(tools)
+            payload["tool_choice"] = "auto"
+        yield ProviderEvent(
+            "request",
+            request_payload=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        )
         if self.scenario == "read-file":
             if self._turn == 0:
                 for part in ("I’ll inspect ", "the requested file."):
@@ -179,6 +193,10 @@ class OpenAICompatibleProvider:
         if tools and self.capabilities.tool_calling:
             payload["tools"] = list(tools)
             payload["tool_choice"] = "auto"
+        payload_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        snapshot_payload, snapshot_unavailable_reason = _request_snapshot(
+            payload_json, self._token
+        )
         headers = {"Content-Type": "application/json"}
         if self._token:
             headers["Authorization"] = "Bearer " + self._token
@@ -198,8 +216,13 @@ class OpenAICompatibleProvider:
                         "POST",
                         f"{self.base_url}/chat/completions",
                         headers=headers,
-                        json=payload,
+                        content=payload_json.encode("utf-8"),
                     ) as response:
+                        yield ProviderEvent(
+                            "request",
+                            request_payload=snapshot_payload,
+                            request_unavailable_reason=snapshot_unavailable_reason,
+                        )
                         if response.status_code != 200:
                             body = (await response.aread())[:4000].decode(errors="replace")
                             if self._token:
@@ -631,6 +654,16 @@ class _SecretRedactor:
     def flush(self) -> str:
         safe, self.buffer = self.buffer, ""
         return safe.replace(self.secret, "******") if self.secret else safe
+
+
+def _request_snapshot(payload: str, token: str) -> tuple[str | None, str]:
+    redacted = payload.replace(token, "******") if token else payload
+    if len(redacted) > MAX_REQUEST_SNAPSHOT_CHARS:
+        return None, (
+            "Request payload was not captured because it exceeds the local "
+            "1,000,000-character limit."
+        )
+    return redacted, ""
 
 
 async def _sse_data(chunks: AsyncIterator[bytes]) -> AsyncIterator[str]:

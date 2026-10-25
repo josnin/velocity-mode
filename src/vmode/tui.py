@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import difflib
+import json
 import shlex
 import sys
 from dataclasses import dataclass, field
@@ -36,13 +37,14 @@ from . import __version__
 from .agent import Agent
 from .config import Settings
 from .instructions import build_system_prompt
-from .protocol import AgentLimits, Message, Usage
+from .protocol import AgentLimits, Message, RequestSnapshot, Usage
 from .providers import Provider
 from .sessions import SessionStore
 from .tools import ToolRegistry
 
 MAX_TRANSCRIPT_CHARS = 250_000
 MAX_RESPONSES = 100
+MAX_PROMPT_VIEW_PAYLOAD_CHARS = 200_000
 SELECTED_RESPONSE_PREFIX = "target: "
 
 TUI_STYLE_RULES = {
@@ -76,12 +78,14 @@ class _TranscriptItem:
     response_id: int | None = None
     incomplete: bool = False
     kind: str = ""
+    request_snapshots: list[RequestSnapshot] = field(default_factory=list)
 
 
 @dataclass
 class _Response:
     identifier: int
     text: str
+    request_snapshots: list[RequestSnapshot] = field(default_factory=list)
 
 
 @dataclass
@@ -101,6 +105,7 @@ class _UIState:
     command_prefix: str = ":"
     search_active: bool = False
     search_query: str = ""
+    show_prompt: bool = False
 
 
 def _register_response(state: _UIState, item: _TranscriptItem) -> None:
@@ -108,7 +113,9 @@ def _register_response(state: _UIState, item: _TranscriptItem) -> None:
         return
     item.response_id = state.next_response_id
     state.next_response_id += 1
-    state.responses.append(_Response(item.response_id, item.text))
+    state.responses.append(
+        _Response(item.response_id, item.text, list(item.request_snapshots))
+    )
     del state.responses[:-MAX_RESPONSES]
     state.selected_response = len(state.responses) - 1
 
@@ -122,7 +129,9 @@ class _TranscriptLexer(Lexer):
 
         for line in lines:
             stripped = line.lstrip()
-            if line.startswith((SELECTED_RESPONSE_PREFIX, "You", "Velocity-Mode", "! ")):
+            if line.startswith(
+                (SELECTED_RESPONSE_PREFIX, "You", "Velocity-Mode", "PROMPT SENT", "! ")
+            ):
                 in_code_block = False
             if line.startswith(SELECTED_RESPONSE_PREFIX):
                 section_style = (
@@ -149,6 +158,9 @@ class _TranscriptLexer(Lexer):
                     if "· error" in line
                     else "class:transcript-assistant-label"
                 )
+            elif line.startswith("PROMPT SENT"):
+                section_style = "class:transcript-assistant"
+                style = "class:transcript-assistant-label"
             elif line.startswith("! Error:") or line.startswith("! Agent failed:"):
                 section_style = "class:transcript-error"
                 style = section_style
@@ -168,6 +180,36 @@ class _TranscriptLexer(Lexer):
             return [(styles[index], lines[index])]
 
         return get_line
+
+
+def _prompt_view_text(response: _Response | None) -> str:
+    if response is None:
+        return "PROMPT SENT\nNo selected response."
+    if not response.request_snapshots:
+        return (
+            "PROMPT SENT\nNo captured request is available for this response. "
+            "Older sessions and providers that do not emit snapshots cannot be "
+            "inspected."
+        )
+    chunks: list[str] = []
+    for snapshot in response.request_snapshots:
+        chunks.append(f"\nPROMPT SENT — request {snapshot.identifier}\n")
+        if snapshot.payload is None:
+            chunks.append(f"  {snapshot.unavailable_reason}\n")
+            continue
+        payload = snapshot.payload
+        if len(payload) > MAX_PROMPT_VIEW_PAYLOAD_CHARS:
+            payload = (
+                payload[:MAX_PROMPT_VIEW_PAYLOAD_CHARS]
+                + "\n[payload display truncated; full snapshot remains in the local session]\n"
+            )
+        chunks.append(
+            "  Locally captured before transmission and stored with this session; "
+            "provider-side transformations are not shown.\n  ```json\n"
+        )
+        chunks.extend(f"  {line}\n" for line in payload.splitlines())
+        chunks.append("  ```\n")
+    return "".join(chunks)[-MAX_TRANSCRIPT_CHARS:]
 
 
 def _approval_preview(name: str, arguments: dict[str, Any], workspace: Path) -> str:
@@ -285,8 +327,31 @@ async def run_tui(
                     and isinstance(response.get("id"), int)
                     and isinstance(response.get("text"), str)
                 ):
+                    snapshots = []
+                    raw_snapshots = response.get("request_snapshots", [])
+                    if isinstance(raw_snapshots, list):
+                        for snapshot in raw_snapshots[:100]:
+                            if (
+                                not isinstance(snapshot, dict)
+                                or not isinstance(snapshot.get("id"), int)
+                                or snapshot["id"] < 1
+                            ):
+                                continue
+                            payload = snapshot.get("payload")
+                            reason = snapshot.get("unavailable_reason", "")
+                            if (
+                                payload is not None
+                                and (
+                                    not isinstance(payload, str)
+                                    or len(payload) > 1_000_000
+                                )
+                            ) or not isinstance(reason, str):
+                                continue
+                            snapshots.append(
+                                RequestSnapshot(snapshot["id"], payload, reason)
+                            )
                     state.responses.append(
-                        _Response(response["id"], response["text"])
+                        _Response(response["id"], response["text"], snapshots)
                     )
         state.next_response_id = max(
             (response.identifier for response in state.responses), default=-1
@@ -304,6 +369,13 @@ async def run_tui(
             state.search_query = ""
 
     def transcript_text() -> str:
+        if state.show_prompt:
+            selected = (
+                state.responses[state.selected_response]
+                if 0 <= state.selected_response < len(state.responses)
+                else None
+            )
+            return _prompt_view_text(selected)
         chunks: list[str] = []
         selected_response = (
             state.responses[state.selected_response]
@@ -364,6 +436,12 @@ async def run_tui(
 
     def refresh_selection_marker(app: Application) -> None:
         text = transcript_text()
+        if state.show_prompt:
+            transcript.buffer.set_document(
+                Document(text, cursor_position=0), bypass_readonly=True
+            )
+            app.invalidate()
+            return
         selected_marker = (
             f"{SELECTED_RESPONSE_PREFIX}{state.selected_response + 1}/"
             f"{len(state.responses)} ·"
@@ -391,6 +469,8 @@ async def run_tui(
             mode = "NORMAL" if app.vi_state.input_mode.value == "vi-navigation" else "INSERT"
         if state.pending_approval:
             hint = "Approval pending · y allow · n deny · Ctrl+C cancel"
+        elif state.show_prompt:
+            hint = "Prompt inspection · :prompt return · / search · y copy · :w save"
         elif app.layout.has_focus(transcript):
             if state.busy:
                 hint = "Task running · :status · :usage · :cancel · Ctrl+C cancel · Ctrl+D half-page down · Tab prompt"
@@ -480,7 +560,18 @@ async def run_tui(
                 for item in state.items
             ],
             "responses": [
-                {"id": response.identifier, "text": response.text}
+                {
+                    "id": response.identifier,
+                    "text": response.text,
+                    "request_snapshots": [
+                        {
+                            "id": snapshot.identifier,
+                            "payload": snapshot.payload,
+                            "unavailable_reason": snapshot.unavailable_reason,
+                        }
+                        for snapshot in response.request_snapshots
+                    ],
+                }
                 for response in state.responses
             ],
             "selected_response": state.selected_response,
@@ -549,12 +640,14 @@ async def run_tui(
             return
         index = min(max(state.selected_response, 0), len(state.responses) - 1)
         response = state.responses[index]
+        view_text = _prompt_view_text(response) if state.show_prompt else response.text
         is_new_response = (
-            selected_text is None
+            not state.show_prompt
+            and selected_text is None
             and response.identifier not in state.yanked_responses
         )
-        yank_text = selected_text if selected_text is not None else response.text
-        add_to_register = selected_text is not None or is_new_response
+        yank_text = selected_text if selected_text is not None else view_text
+        add_to_register = selected_text is not None or is_new_response or state.show_prompt
         entries = [*state.yank_entries]
         if add_to_register:
             entries.append(yank_text)
@@ -573,7 +666,8 @@ async def run_tui(
         app.output.write_raw(f"\x1b]52;c;{payload}\x07")
         app.output.flush()
         if selected_text is None:
-            add_notice(f"Yanked response {index + 1}.")
+            target = "prompt" if state.show_prompt else "response"
+            add_notice(f"Yanked {target} {index + 1}.")
         else:
             add_notice(f"Yanked visual selection ({len(selected_text)} characters).")
 
@@ -588,6 +682,15 @@ async def run_tui(
         app.vi_state.input_mode = app.vi_state.input_mode.__class__.NAVIGATION
         app.invalidate()
 
+    def toggle_prompt_view(app: Application) -> None:
+        if not state.responses:
+            add_notice("No completed response has a captured request.")
+            return
+        state.show_prompt = not state.show_prompt
+        app.layout.focus(transcript)
+        app.vi_state.input_mode = app.vi_state.input_mode.__class__.NAVIGATION
+        refresh_selection_marker(app)
+
     def start_agent(prompt: str, app: Application) -> None:
         nonlocal active_task
         cleaned = prompt.strip()
@@ -601,6 +704,7 @@ async def run_tui(
             )
             return
         state.items.append(_TranscriptItem("user", cleaned))
+        state.show_prompt = False
         assistant_item = _TranscriptItem("assistant")
         state.items.append(assistant_item)
         state.busy = True
@@ -615,6 +719,9 @@ async def run_tui(
                     schedule_persist()
                     if event.kind == "text":
                         assistant_item.text += event.text
+                        redraw_transcript(transcript, app)
+                    elif event.kind == "request" and event.request is not None:
+                        assistant_item.request_snapshots.append(event.request)
                         redraw_transcript(transcript, app)
                     elif event.kind == "activity":
                         state.activities.append(event.text)
@@ -1082,13 +1189,25 @@ async def run_tui(
                 if target.exists() and not target.is_file():
                     raise ValueError("Result target is not a regular file.")
                 response = state.responses[state.selected_response]
-                target.write_text(response.text, encoding="utf-8")
+                content = (
+                    _prompt_view_text(response)
+                    if state.show_prompt
+                    else response.text
+                )
+                target.write_text(content, encoding="utf-8")
             except (OSError, ValueError, RuntimeError) as exc:
                 add_notice(f"Could not save result: {exc}")
             else:
+                subject = "prompt" if state.show_prompt else "result"
                 add_notice(
-                    f"Saved result {state.selected_response + 1} to {relative.as_posix()}."
+                    f"Saved {subject} {state.selected_response + 1} to "
+                    f"{relative.as_posix()}."
                 )
+        elif name == "prompt":
+            if arguments:
+                add_notice("Usage: :prompt")
+            else:
+                toggle_prompt_view(app)
         elif name == "s":
             if arguments:
                 add_notice("Usage: :s")
@@ -1144,6 +1263,7 @@ async def run_tui(
                 "Enter newline · Ctrl+S send (:s fallback) · "
                 "Ctrl+D quit from prompt / half-page down in results · "
                 ":w <file> save response · @ files · Tab responses · "
+                ":prompt inspect sent request · "
                 "/ search, n/N repeat · [ older / ] newer response for save/copy · "
                 "v/V select · y copy · :status tool state"
             )

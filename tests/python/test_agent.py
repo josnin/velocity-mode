@@ -13,6 +13,7 @@ from vmode.protocol import (
 )
 from vmode.providers import MockProvider
 from vmode.tools import ToolRegistry
+from vmode.tui import _Response, _prompt_view_text
 
 
 @pytest.mark.asyncio
@@ -33,6 +34,12 @@ async def test_complete_mock_tool_cycle_streams_and_returns_file_result(tmp_path
     assert agent.request_count == 2
     assert agent.tool_call_count == 1
     assert len(provider.requests) == 2
+    snapshots = [event.request for event in events if event.kind == "request"]
+    assert [snapshot.identifier for snapshot in snapshots if snapshot is not None] == [1, 2]
+    assert snapshots[0] is not None
+    assert "sample.py" in snapshots[0].payload
+    assert snapshots[1] is not None
+    assert '"role":"tool"' in snapshots[1].payload
 
     second_request = provider.requests[1]
     assert [message.role for message in second_request] == [
@@ -44,6 +51,40 @@ async def test_complete_mock_tool_cycle_streams_and_returns_file_result(tmp_path
     assert second_request[2].tool_call_id == "mock-read-1"
     assert "return 42" in second_request[2].content
     assert "[Referenced file: sample.py]" in second_request[0].content
+
+
+@pytest.mark.asyncio
+async def test_inspecting_captured_request_does_not_call_provider_or_mutate_history(
+    tmp_path: Path,
+):
+    class CountingProvider:
+        name = "counting"
+        model = "test"
+        capabilities = ProviderCapabilities(streaming=True, tool_calling=False)
+
+        def __init__(self):
+            self.calls = 0
+
+        async def stream(self, messages, tools):
+            self.calls += 1
+            yield ProviderEvent(
+                "request",
+                request_payload='{"model":"test","messages":[{"role":"user"}]}',
+            )
+            yield ProviderEvent("text", text="completed")
+            yield ProviderEvent("response", finish_reason="stop")
+
+    provider = CountingProvider()
+    agent = Agent(provider, ToolRegistry(tmp_path))
+    events = [event async for event in agent.run("inspect")]
+    snapshots = [event.request for event in events if event.kind == "request"]
+    history_before = list(agent.history)
+
+    rendered = _prompt_view_text(_Response(1, "completed", [snapshots[0]]))
+
+    assert "PROMPT SENT" in rendered
+    assert provider.calls == 1
+    assert agent.history == history_before
 
 
 @pytest.mark.asyncio

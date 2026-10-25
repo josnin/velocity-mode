@@ -82,7 +82,22 @@ def test_normal_motions_and_response_copy_in_terminal(tmp_path: Path):
         assert wait_for(b"Turn complete"), bytes(output)
 
         output.clear()
-        os.write(fd, b"\t/not-found\r")
+        os.write(fd, b":prompt\r")
+        assert wait_for(b"PROMPT SENT"), bytes(output)
+        assert b'"model":"mock/deterministic"' in output
+        store = SessionStore(tmp_path, state_home)
+        session_id = store.latest_id()
+        assert session_id is not None
+        record = store.load(session_id)
+        snapshots = record["ui"]["responses"][0]["request_snapshots"]
+        assert snapshots[0]["payload"].startswith('{"model":"mock/deterministic"')
+        assert "Authorization" not in snapshots[0]["payload"]
+        output.clear()
+        os.write(fd, b":prompt\r")
+        assert wait_for(b"Mock response: ab"), bytes(output)
+
+        output.clear()
+        os.write(fd, b"/not-found\r")
         assert wait_for(b"No match for 'not-found'"), bytes(output)
         output.clear()
         os.write(fd, b"/Mock\rnN")

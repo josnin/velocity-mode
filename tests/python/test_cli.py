@@ -388,6 +388,10 @@ def test_prompt_completer_provides_commands_and_file_references(tmp_path: Path):
     completer = VModeCompleter(tmp_path)
     commands = list(completer.get_completions(Document("/sta"), CompleteEvent()))
     assert any(item.text == "/status" for item in commands)
+    prompt_commands = list(
+        completer.get_completions(Document("/pro"), CompleteEvent())
+    )
+    assert any(item.text == "/prompt" for item in prompt_commands)
     paths = list(completer.get_completions(Document("Inspect @src/a"), CompleteEvent()))
     assert any(item.text == "@src/app.py" for item in paths)
 

@@ -5,7 +5,14 @@ import json
 import time
 from collections.abc import AsyncIterator
 
-from .protocol import AgentEvent, AgentLimits, Message, ProviderError, ProviderEvent
+from .protocol import (
+    AgentEvent,
+    AgentLimits,
+    Message,
+    ProviderError,
+    ProviderEvent,
+    RequestSnapshot,
+)
 from .providers import Provider
 from .skills import SkillCatalog
 from .tools import ToolError, ToolRegistry, definitions
@@ -25,6 +32,7 @@ class Agent:
         if system_prompt:
             self.history.append(Message("system", system_prompt))
         self.request_count = 0
+        self._next_request_snapshot_id = 1
         self.tool_call_count = 0
         self._cancelled = False
         self.skills = SkillCatalog(self.tools.root)
@@ -96,7 +104,15 @@ class Agent:
                         if self._cancelled:
                             yield AgentEvent("activity", "Cancelled.")
                             return
-                        if event.kind == "text":
+                        if event.kind == "request":
+                            snapshot = RequestSnapshot(
+                                self._next_request_snapshot_id,
+                                event.request_payload,
+                                event.request_unavailable_reason,
+                            )
+                            self._next_request_snapshot_id += 1
+                            yield AgentEvent("request", request=snapshot)
+                        elif event.kind == "text":
                             response_chars += len(event.text)
                             if response_chars > self.limits.max_response_chars:
                                 yield AgentEvent("error", "Model response size limit reached.")
