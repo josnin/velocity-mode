@@ -1,14 +1,12 @@
 # Velocity-Mode
 
-Author: Velocity-Mode
-
 Velocity-Mode (`vmode`) is a Python 3.11+ coding-agent CLI with a
 keyboard-first, Vim-inspired terminal interface. Start with a prompt, review
 each proposed workspace action, and keep your session locally resumable.
 
 ## Start here
 
-1. [Install VMode](#install).
+1. Install VMode.
 2. [Choose a provider and set its credential](docs/USER_MANUAL.md#choose-a-provider).
 3. Run `vmode`, type a task, and press `Ctrl+S`.
 
@@ -16,10 +14,10 @@ The [user manual](docs/USER_MANUAL.md) introduces one capability at a time:
 starting a session, navigating with Vim keys, choosing a provider, approving
 work, and resuming later.
 
-![Vim-style navigation: Esc enters Normal mode, Tab opens results, j moves, and Tab returns to the prompt.](docs/assets/vim-navigation.gif)
+![Vim-style navigation: Esc enters Normal mode, Tab opens results, brackets select responses, and Tab returns to the prompt.](docs/assets/vim-navigation.gif)
 
-*Vim-style navigation: `Esc` enters Normal mode, `Tab` moves between the
-prompt and results, and `j`/`k` scroll results.*
+*Vim-style navigation in the VMode terminal: `Esc` enters Normal mode, `Tab`
+moves between the prompt and results, and `[`/`]` select a response.*
 
 ### Learn at your pace
 
@@ -30,58 +28,20 @@ prompt and results, and `j`/`k` scroll results.*
 | Configure or switch models | [Choose a provider](docs/USER_MANUAL.md#choose-a-provider) |
 | Review proposed writes and commands | [Approvals and safety](docs/USER_MANUAL.md#approvals-and-safety) |
 | Resume or remove a local session | [Sessions](docs/USER_MANUAL.md#sessions) |
+| Explore provider, workspace, and development reference | [Advanced reference](docs/USER_MANUAL.md#advanced-reference) |
 
 ## Why Velocity-Mode
 
-- **Vim-like, minimalist interaction.** Edit prompts in INSERT/NORMAL modes,
-  browse results with familiar motions, search, select/yank, and stay in a
-  compact borderless terminal UI.
-- **Provider flexibility without discarding a task.** Switch an idle session
-  with `:provider <provider> <model> [base-url]` if a model is unavailable,
-  quota-limited, or unsuitable, while retaining the conversation history.
-- **Auditable agent work.** Streamed responses, captured outgoing requests,
-  approvals, and compact command results make the work visible without
-  turning the transcript into a dashboard.
-- **Deliberate workspace access.** The fixed tool registry confines paths to
-  the workspace; writes, commands, Git staging, and commits need explicit
-  approval.
-- **Practical local recovery.** Sessions are private, workspace-scoped, and
-  resumable after an interruption. The mock provider supports deterministic,
-  offline development and tests.
-
-### Context and token discipline
-
-Velocity-Mode reduces avoidable context growth; it does **not** claim a fixed
-token or cost saving because tokenization, provider-side caching, and billing
-are provider/model specific.
-
-| Control | Current default | What it means |
-| --- | --- | --- |
-| Prior conversation input | 4 complete turns; 60,000 serialized characters | Older whole turns are removed before a new task. `--max-history-chars` can lower or raise the character budget. |
-| Current input | No universal token cap | The system prompt, current task, selected skills, explicit `@` files, tool schemas, and retained history still must fit the selected provider/model context window. VMode cannot reliably convert this to tokens for every provider. |
-| Model output | 4,096 tokens | Sent as `max_tokens`; change it with `--max-output-tokens` or configuration. The provider/model can enforce a lower limit. |
-| Streamed response safety limit | 1,000,000 characters | Stops unexpectedly large streamed model output even if the provider does not honor the output-token request. |
-| Tool result sent back to the model | 100,000 characters | Bounds one tool result in the next model request; command/search/file tools have their own bounded output. |
-| Provider requests per task | 24 | Bounds model → tool → model loops; configurable up to 100 with `--max-iterations`. |
-| Tool calls per task / response | 32 / 8 | Stops excessive tool-call loops. |
-| Task timeout / approved command timeout | 300 seconds / 60 seconds | The task timeout is configurable up to 600 seconds; command duration remains separately bounded. |
-
-Only explicit `@path` references are attached; VMode does not send the whole
-repository by default. File search results are bounded, and task skills are
-selected from metadata rather than all being injected; selected skill contents
-are frozen for that task. System instructions and tool schemas remain stable
-across turns, which may allow prefix caching on providers that support it.
-`:usage` shows provider-reported cached-input tokens when available, but does
-not infer a cache hit or monetary saving.
-
-Provider switching starts subsequent requests with the selected provider; it
-does not cancel an active request or eliminate the retained history from the
-next request. Configure the target provider's credentials and choose a model
-that supports the needed features.
+- **Vim-like, minimalist interaction.** Keep your hands on the keyboard while
+  editing prompts and browsing results.
+- **Visible, deliberate work.** Review streamed responses and approve writes,
+  commands, Git staging, and commits before they run.
+- **Flexible and recoverable.** Choose a supported provider, switch an idle
+  session when needed, and resume local sessions after an interruption.
 
 ## Install
 
-On Linux, install the latest version from the public GitHub repository with:
+On Linux, install the latest version from the public GitHub repository:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/josnin/velocity-mode/main/install.sh \
@@ -90,405 +50,20 @@ less install.sh
 sh install.sh
 ```
 
-The installer uses Python 3.11 or newer, creates an isolated virtual
-environment under `$XDG_DATA_HOME/vmode/venv` (or
-`~/.local/share/vmode/venv` when `XDG_DATA_HOME` is unset), and places a
-`vmode` launcher in `~/.local/bin`. It does not use `sudo` or modify shell
-startup files. If `~/.local/bin` is not on your `PATH`, add it using your
-shell's normal configuration. Re-run the installer to update. The installer
-requires Git when installing from the GitHub URL; when run from a Git
-checkout, it installs that checkout instead.
+The installer requires Python 3.11+ and Git, creates an isolated environment,
+and adds `vmode` to `~/.local/bin`. It does not use `sudo` or modify shell
+startup files. Add `~/.local/bin` to your `PATH` using your shell's normal
+configuration if needed.
 
-## Run
+## First session
 
 ```sh
-vmode --help
-vmode --version
 vmode
-vmode --list-sessions
-vmode --resume
-vmode "Inspect @README.md and summarize it"
-vmode --exec --provider mock --mock-scenario read-file \
-  "Inspect @README.md and summarize it"
 ```
 
-The final command exercises the complete offline model → `read_file` tool →
-tool-result message → second model response cycle. The default mock only
-returns a deterministic response; it never accesses files or processes.
-
-When `--workspace` is omitted, Velocity-Mode automatically uses the nearest
-parent Git repository root. This lets you start VMode from any subdirectory of
-a project without repeating its path. Outside a Git repository, it uses the
-current directory; use `--workspace` only to intentionally select a different
-directory.
-
-## Workspace search
-
-The `list_files` and `search_files` agent tools require
-[ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) on `PATH`. It is an
-external runtime requirement, not a Python dependency.
-Ripgrep provides regex searching with smart-case matching, literal matching
-when requested by the agent, paths, and line numbers. On Fedora, install it
-with:
-
-```sh
-sudo dnf install ripgrep
-```
-
-Velocity-Mode reports an explicit error when `rg` is unavailable; install it
-before using workspace discovery or search.
-
-Searches only inspect the active workspace, do not follow symlinks, include
-hidden files unless ignored, and honor ignore rules. They always exclude
-`.git`, VCS metadata, dependency directories, virtual environments, caches,
-and common build outputs. Search results are compact JSON containing paths,
-line numbers, text, backend, and a `truncated` marker; they are bounded before
-being passed back to the model.
-
-## Install from source
-
-For development or to install from a local checkout:
-
-```sh
-git clone https://github.com/josnin/velocity-mode.git
-cd velocity-mode
-python3.11 -m venv .venv
-. .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e '.[test]'
-```
-
-Interactive sessions are automatically saved locally as you type and as model
-responses arrive. If the TUI closes unexpectedly, run `vmode --resume` to
-continue the most recently updated session in the current workspace, or use
-`vmode --list-sessions` and `vmode --resume <session-id>` to choose one.
-Session provider/model and its effective tool-calling setting are restored
-automatically; configure credentials and any custom endpoint as usual. Remove a
-session with `vmode --delete-session <session-id>`. Sessions are
-workspace-specific and the newest 25 are retained.
-
-Session files are stored under `${XDG_STATE_HOME:-~/.local/state}/vmode`,
-with private directory/file permissions. They contain prompts, responses,
-tool messages/results, and any explicitly referenced file contents; they do
-not contain provider credentials. Treat the local state directory as
-potentially sensitive, and delete sessions you no longer need.
-
-## Hugging Face
-
-<!-- VMode update -->
-
-Create a fine-grained Hugging Face access token with permission to call
-[Inference Providers](https://huggingface.co/docs/inference-providers/en/index),
-then export it for the current shell:
-
-```sh
-export HF_TOKEN="your_hugging_face_token"
-vmode --provider huggingface --model "openai/gpt-oss-120b:cheapest"
-```
-
-For one-shot use:
-
-```sh
-vmode --exec --provider huggingface --model "openai/gpt-oss-120b:fastest" \
-  "Explain the selected source"
-```
-
-For an interactive coding task, start Velocity-Mode without `--exec` so it can
-ask you to approve file writes and commands. Tool calling is enabled by default
-for the Hugging Face provider; use a model/provider route that supports tool calls.
-The confirmed Phi-3 route is available for text inference, but tool-call
-support is not guaranteed. For a coding task, prefer a model documented to
-support tool calling, such as `openai/gpt-oss-120b`. An existing TOML setting
-or `VMODE_TOOL_CALLING=false` can still disable tools; check `:status` in the
-interactive UI or pass `--tool-calling` to override it. The header also shows
-`tools:on` or `tools:off`.
-
-Example interactive task:
-
-```sh
-vmode --provider huggingface --model "openai/gpt-oss-120b:cheapest" \
-  --tool-calling \
-  "Create a minimal hello-world CLI in this workspace. Inspect the project, create the needed file, and run it. Ask my approval before writing or running commands."
-```
-
-Do not add `--exec` to this command: noninteractive mode deliberately denies
-file writes and commands rather than approving them automatically.
-
-If the router returns `model not found`, check that the model currently has an
-Inference Providers route. When a provider is listed, pin it explicitly rather
-than relying on `:cheapest`. For example, Hugging Face currently lists
-`microsoft/Phi-3-mini-4k-instruct` on Featherless AI:
-
-```sh
-vmode --exec --provider huggingface \
-  --model "microsoft/Phi-3-mini-4k-instruct:cheapest" \
-  "Reply with OK"
-```
-
-The Hugging Face adapter calls the official router's streaming Chat
-Completions endpoint, `https://router.huggingface.co/v1/chat/completions`.
-Configure a custom provider-compatible HTTPS base URL with `--base-url` or
-TOML. Model IDs, provider routing suffixes, tool support, availability,
-context limits, and streaming behavior vary. The example model IDs are not
-availability or pricing guarantees. Hugging Face inference may consume
-credits or require payment. Velocity-Mode does not estimate costs.
-
-An optional live smoke request requires explicit opt-in, a token, and a model:
-
-```sh
-HF_TOKEN="your_hugging_face_token" \
-HF_MODEL="openai/gpt-oss-120b:cheapest" \
-  vmode --live-smoke
-```
-
-It can use paid credits and fail for account, model-routing, or service reasons.
-It is not part of the test suite.
-
-## Other OpenAI-compatible providers
-
-Use `openai-compatible` for providers that implement the streaming OpenAI Chat
-Completions API. Set their API key in `VMODE_API_KEY` and pass the provider's
-HTTPS API base URL and model. For example:
-
-```sh
-export VMODE_API_KEY="your_provider_api_key"
-vmode --provider openai-compatible \
-  --base-url "https://api.example.com/v1" \
-  --model "your-model-id"
-```
-
-## OpenRouter
-
-[OpenRouter](https://openrouter.ai/) has a dedicated adapter using its
-streaming OpenAI Chat Completions-compatible endpoint:
-
-```sh
-export OPENROUTER_API_KEY="your_openrouter_api_key"
-vmode --provider openrouter \
-  --model "provider/model"
-```
-
-Choose a current model slug from the [OpenRouter model catalog](https://openrouter.ai/models).
-Free-model availability, rate limits, tool support, and billing are controlled
-by OpenRouter and the selected upstream model. Enable `--tool-calling` only
-when that route documents compatible tool support. Tool calling is off by
-default for OpenRouter. Start VMode with `--tool-calling` before switching
-providers if the selected route supports tools. In an idle interactive session,
-switch directly with `:provider openrouter provider/model`.
-
-The endpoint base URL is the API prefix (typically ending in `/v1`);
-Velocity-Mode appends `/chat/completions`. The adapter sends a bearer
-authorization header, requests SSE streaming, and parses common OpenAI Chat
-Completions message, tool-call, and usage shapes. Provider-specific endpoints
-can differ: use only documented compatible endpoints, and disable tool calling
-unless the selected model and route explicitly support it. The generic
-provider does not assume function calling; enable it with `--tool-calling` or
-`tool_calling = true` only when the endpoint supports the tool schema.
-Endpoint-specific model names, request limits, usage reporting, stream options,
-tool-call behavior,
-availability, and billing are controlled by the provider. This adapter is
-not a universal client for every model API and has not been live-tested
-against every vendor.
-
-```toml
-[provider]
-name = "openai-compatible"
-model = "your-model-id"
-base_url = "https://api.example.com/v1"
-timeout = 300
-max_output_tokens = 4096
-tool_calling = false
-```
-
-## Google Gemini
-
-Velocity-Mode supports the Google Gemini Developer API through its official
-OpenAI-compatible streaming endpoint. Create an API key in
-[Google AI Studio](https://aistudio.google.com/apikey), export it for the
-current shell, and select an available Gemini model:
-
-```sh
-export GEMINI_API_KEY="your_gemini_api_key"
-vmode --provider gemini \
-  --base-url https://generativelanguage.googleapis.com/v1beta/openai \
-  --model gemini-3.8-flash
-```
-
-The default endpoint is
-`https://generativelanguage.googleapis.com/v1beta/openai`; override it only
-with a documented compatible HTTPS endpoint. Tool calling is enabled by
-default for Gemini and can be disabled with `--no-tool-calling`. Model
-availability, free-tier quotas, rate limits, tool support, and billing are
-controlled by Google and can change; select a model and account configuration
-that currently qualifies for the free tier. If you set `--base-url`, use the
-API prefix ending in `/v1beta/openai`, not the full `/chat/completions` URL.
-
-## Groq
-
-Velocity-Mode supports Groq's OpenAI-compatible streaming endpoint. Create an
-API key in the [Groq Console](https://console.groq.com/keys), export it for the
-current shell, and select an available model:
-
-```sh
-export GROQ_API_KEY="your_groq_api_key"
-vmode --provider groq --model "openai/gpt-oss-20b" --max-history-chars 16000
-```
-
-The default endpoint is `https://api.groq.com/openai/v1`. Tool calling is
-enabled by default for Groq; model availability and free developer-tier limits
-are controlled by Groq and can change. Use `--no-tool-calling` for a minimal
-connectivity check or when a chosen model does not support tools.
-
-## Ollama
-
-Velocity-Mode can call a local or remote Ollama server through its
-OpenAI-compatible Chat Completions endpoint. The following tool-capable
-configuration has been verified:
-
-```sh
-vmode --provider ollama --model qwen2.5:1.5b \
-  --base-url http://192.168.64.1:11434/v1 \
-  --tool-calling
-```
-
-The default endpoint is `http://127.0.0.1:11434/v1`; no API key is required.
-To use an Ollama server on another machine, provide its OpenAI-compatible
-endpoint, for example `--base-url http://192.168.64.1:11434/v1`. Ollama URLs
-may use HTTP or HTTPS but cannot contain URL credentials, query strings, or
-fragments. Use HTTP only on a trusted network because prompts and responses
-are sent without transport encryption. Tool calling remains off by default
-because support depends on the selected model; enable it explicitly with
-`--tool-calling` only for a model and Ollama version that support tools.
-
-## Configure and use VMode
-
-VMode reads `~/.config/vmode/config.toml` by default. CLI options override
-environment variables, which override TOML and built-in defaults; credentials
-remain environment-only. Tool calling defaults on for Gemini, Groq, and
-Hugging Face, and off for Ollama and generic compatible endpoints.
-
-For the config-file format, environment overrides, Vim keymap, provider
-switching, request inspection, session recovery, transcript clearing, and
-runtime limits, use the [user manual](docs/USER_MANUAL.md). Use `vmode --help`
-for the complete CLI option reference.
-
-## Tools and safety
-
-The tool registry is allowlisted: `read_file`, `list_files`, `search_files`,
-`write_file`, `edit_file`, and `run_command`. `edit_file` replaces one exact
-text occurrence in an existing file, which avoids regenerating the complete
-file for focused changes. Writes, edits, and commands require interactive
-approval. Noninteractive `--exec` refuses those operations and exits with an
-error. Commands use argument arrays (never a shell string), run from the
-workspace, and have time/output bounds. File paths are confined to the
-workspace. These checks are not an operating-system sandbox; do not approve
-commands or modifications you do not understand.
-
-The agent limits iterations, wall-clock time, streamed response characters,
-and tool output. Tool call IDs and argument objects are validated, and tool
-results are sent in dedicated `tool` messages rather than flattened into user
-messages.
-
-Approved commands appear in the transcript as one compact entry: the argv and
-`running…` status are replaced with the bounded final exit result. Velocity-Mode
-does not stream each command-output line, which keeps the terminal responsive
-and the transcript readable.
-
-## Workspace instruction files
-
-When starting an interactive or `--exec` task, Velocity-Mode reads optional
-root-level `AGENTS.md` and `SKILLS.md` files in the selected workspace and
-adds their UTF-8 contents to the system instruction context. This lets
-projects provide their normal contribution guidance and skill notes without
-copying them into every prompt.
-Each file is limited to 32 KB and the combined content to 64 KB. Missing files
-are ignored; symlinks, non-regular files, invalid UTF-8, and over-limit files
-are rejected. These files are project-provided context, not trusted policy:
-they cannot override approval requirements, workspace restrictions, available
-tools, or higher-priority safety rules. Review their contents as you would
-other repository instructions.
-
-### `AGENTS.md` example
-
-Use `AGENTS.md` for concise, always-applicable repository guidance:
-
-```markdown
-# Project instructions
-
-- Use Python 3.11 and keep changes compatible with the existing public API.
-- Put tests beside the behavior they cover under `tests/python`.
-- Run `python -m pytest -q tests/python` after code changes.
-- Do not edit generated files under `dist/`.
-```
-
-`SKILLS.md` is also always-loaded general guidance. Use it for a short index
-or conventions that apply to all tasks, not for task-specific procedures:
-
-```markdown
-# Project skill notes
-
-- Python test work uses the `python-tests` selectable skill.
-- Release work must follow the repository release checklist.
-```
-
-## Selectable workspace skills
-
-Optional task-specific skills live in either `.vmode/skills/*.md` or the
-project-visible `skills/<skill-id>/SKILL.md` layout. A skill uses TOML front
-matter followed by its guidance. For example, create
-`.vmode/skills/python-tests.md`:
-
-```markdown
-+++
-id = "python-tests"
-version = "1.0.0"
-description = "Run and interpret the Python test suite."
-tags = ["python", "testing"]
-triggers = ["pytest", "test"]
-+++
-
-# Python test workflow
-
-1. Inspect the focused tests and the code they cover before editing.
-2. Run the narrowest relevant test selector first.
-3. Run `python -m pytest -q tests/python` when changes affect shared behavior.
-
-Use the existing test helpers and run the focused suite first.
-```
-
-`id`, `version`, and `description` are required. `id` uses lowercase letters,
-numbers, and hyphens; `tags` and `triggers` are optional string lists used for
-deterministic task matching. Increment `version` whenever the guidance changes.
-Skill guidance is scoped to the selected task, unlike `AGENTS.md` and
-`SKILLS.md`.
-
-Velocity-Mode safely loads regular UTF-8 files only and first matches skills
-deterministically from their ID, tags, and triggers. Tied candidates use a
-validated provider-neutral JSON selection request; invalid selector output
-falls back to the tied deterministic candidates. Selected skill contents,
-declared versions, and content hashes are frozen for the entire task, then
-the catalog is reloaded for the next task. Skills are appended after the
-user task, preserving the stable system prompt and tool-schema prefix used by
-provider prefix caches. `SKILLS.md` remains general workspace guidance rather
-than a selectable skill.
-
-## Tests and development
-
-```sh
-python -m pytest -q tests/python
-```
-
-Tests use deterministic providers, injected HTTP transports, and fake
-credentials. The routine suite makes no network request and requires no
-Hugging Face account or inference credits. The package provides the `vmode`
-console entry point and can also be run as `python -m vmode`. Existing
-installations of the old `vima` distribution should migrate with:
-
-```sh
-python -m pip uninstall vima
-python -m pip install -e '.[test]'
-```
-
-See the [user manual](docs/USER_MANUAL.md), [architecture](docs/ARCHITECTURE.md),
-[provider contract](docs/PROVIDER_CONTRACT.md), [security](docs/SECURITY.md),
-and [roadmap](docs/ROADMAP.md).
+Write a task and press `Ctrl+S`. Start VMode without `--exec` for work that
+may need write or command approval.
+
+For the complete reference, including provider-specific setup, workspace
+search, limits, source installation, skills, and tests, read the
+[user manual](docs/USER_MANUAL.md).
