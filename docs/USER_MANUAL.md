@@ -5,6 +5,20 @@ Vim-inspired terminal interface. It streams model responses, can inspect and
 change the selected workspace through approved tools, and saves resumable local
 sessions.
 
+## Learn in stages
+
+Follow the sections in order the first time:
+
+1. **Start** a session and send a simple task.
+2. **Prompt and results** explains the small Vim keyset you need to move
+   between your draft and the response.
+3. **Choose a provider** when you are ready to connect a preferred model.
+4. **Approvals and safety** before allowing workspace changes.
+5. **Sessions** when you want to resume work later.
+
+You do not need to memorize every command. Press `:help` in VMode whenever you
+need a reminder.
+
 ## Start
 
 ```sh
@@ -12,6 +26,10 @@ vmode
 vmode "Inspect @README.md and summarize it"
 vmode --workspace /path/to/project
 ```
+
+After you configure a provider credential, run `vmode`, write a task, and
+press `Ctrl+S` to send it. Use the next section to browse the response without
+losing your draft.
 
 Without `--workspace`, VMode uses the nearest parent Git root, or the current
 directory outside a Git repository. Use `@path` or `@"path with spaces"` to

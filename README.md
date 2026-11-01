@@ -2,17 +2,34 @@
 
 Author: Velocity-Mode
 
-Velocity-Mode (`vmode`) is a Python 3.11+ coding-agent CLI for people who
-prefer a keyboard-first, Vim-inspired terminal workflow. It streams model
-responses, supports bounded tool calls, and keeps the prompt, results, and
-approvals in one restrained terminal interface. It includes Hugging Face,
-Gemini, Groq, OpenRouter, Ollama, and documented OpenAI Chat
-Completions-compatible providers, plus a deterministic mock for offline
-development and tests.
+Velocity-Mode (`vmode`) is a Python 3.11+ coding-agent CLI with a
+keyboard-first, Vim-inspired terminal interface. Start with a prompt, review
+each proposed workspace action, and keep your session locally resumable.
 
-**New to VMode?** Read the concise [user manual](docs/USER_MANUAL.md) for
-everyday setup, provider switching, sessions, prompt inspection, and Vim
-controls.
+## Start here
+
+1. [Install VMode](#install).
+2. [Choose a provider and set its credential](docs/USER_MANUAL.md#choose-a-provider).
+3. Run `vmode`, type a task, and press `Ctrl+S`.
+
+The [user manual](docs/USER_MANUAL.md) introduces one capability at a time:
+starting a session, navigating with Vim keys, choosing a provider, approving
+work, and resuming later.
+
+![Vim-style navigation: Esc enters Normal mode, Tab opens results, j moves, and Tab returns to the prompt.](docs/assets/vim-navigation.gif)
+
+*Vim-style navigation: `Esc` enters Normal mode, `Tab` moves between the
+prompt and results, and `j`/`k` scroll results.*
+
+### Learn at your pace
+
+| When you are ready to… | Read |
+| --- | --- |
+| Send your first task and attach a file | [Start](docs/USER_MANUAL.md#start) |
+| Move, search, copy, and save with Vim keys | [Prompt and results](docs/USER_MANUAL.md#prompt-and-results) |
+| Configure or switch models | [Choose a provider](docs/USER_MANUAL.md#choose-a-provider) |
+| Review proposed writes and commands | [Approvals and safety](docs/USER_MANUAL.md#approvals-and-safety) |
+| Resume or remove a local session | [Sessions](docs/USER_MANUAL.md#sessions) |
 
 ## Why Velocity-Mode
 
